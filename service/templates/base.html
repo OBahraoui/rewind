@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Rewind{% endblock %}</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⏪</text></svg>">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="/">⏪ Rewind</a>
+  <span class="tagline">Let agents do anything they can undo. Stop them only for what they can't.</span>
+</header>
+<main>
+{% block content %}{% endblock %}
+</main>
+<footer>Rewind · <a href="/api/docs">API</a> · <a href="/api/runs">runs.json</a> · MCP at <code>/mcp</code></footer>
+</body>
+</html>

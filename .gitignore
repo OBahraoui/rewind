@@ -1,0 +1,20 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+report.xml
+*.egg-info/
+build/
+dist/
+.env
+.rewind/
+gcp-key*.json
+*.credentials.json
+.DS_Store
+
+# Private planning notes, not part of the submission
+Rewind — Build Plan*.pdf

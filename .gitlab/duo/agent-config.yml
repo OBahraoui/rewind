@@ -1,0 +1,16 @@
+# Runtime for Duo flows in this project (read from the default branch only).
+# The setup gives agents what they need to run the app's tests; the network policy
+# keeps them from reaching external systems, which is what makes their actions
+# undoable: nothing they do can leave the project.
+setup_script:
+  - pip install -q -r app/requirements-dev.txt
+cache:
+  key:
+    files:
+      - app/requirements-dev.txt
+  paths:
+    - .cache/pip
+network_policy:
+  allowed_domains:
+    - pypi.org
+    - files.pythonhosted.org

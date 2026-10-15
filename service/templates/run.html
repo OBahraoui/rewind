@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Rewind · run {{ run.id }}{% endblock %}
+{% block content %}
+<p><a href="/">← all runs</a></p>
+<section class="hero">
+  <h1><a href="{{ run.issue_url }}">#{{ run.issue_iid }}</a> {{ run.issue_title }}</h1>
+  <p class="state big s-{{ run.state.value }}">{{ status }}</p>
+  {% if run.error %}<p class="error">{{ run.error }}</p>{% endif %}
+</section>
+<section class="facts">
+  <div><span class="l">Run</span><code>{{ run.id }}</code></div>
+  <div><span class="l">Checkpoint</span><code>{{ run.checkpoint_id or '—' }}</code></div>
+  <div><span class="l">Merge request</span>{% if run.mr_iid %}<a href="{{ run.mr_url }}">!{{ run.mr_iid }}</a>{% else %}—{% endif %}</div>
+  <div><span class="l">Gated commit</span><code>{{ run.gated_sha[:8] or '—' }}</code></div>
+  <div><span class="l">Release pipeline</span>{% if run.release_pipeline_id %}<a href="{{ run.release_pipeline_url }}">#{{ run.release_pipeline_id }}</a>{% else %}—{% endif %}</div>
+  <div><span class="l">Rewind</span><code>{{ run.rewind_id or '—' }}</code></div>
+</section>
+
+<section>
+  <h2>Lifecycle</h2>
+  {% set covered = run.evidence | map(attribute='stage') | list %}
+  <ol class="stages">
+  {% for s in stages %}<li class="{{ 'on' if s in covered else '' }}">{{ s }}</li>{% endfor %}
+  </ol>
+  {% if run.evidence %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Stage</th><th>Evidence</th><th>Status</th></tr></thead>
+    <tbody>{% for e in run.evidence | sort(attribute='stage') %}
+      <tr><td>{{ e.stage }}</td><td>{% if e.url %}<a href="{{ e.url }}">{{ e.name }}</a>{% else %}{{ e.name }}{% endif %}</td><td>{{ e.status }}</td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+  {% endif %}
+</section>
+
+{% if run.gate %}
+<section>
+  <h2>Reversibility gate <span class="pill g-{{ run.gate.verdict }}">{{ run.gate.verdict }}</span></h2>
+  {% if not run.gate.findings %}<p class="muted">Everything this change ships can be undone by Rewind.</p>{% endif %}
+  <ul class="findings">
+  {% for f in run.gate.findings %}
+    <li><strong>{{ f.rule_id }}</strong>{% if f.path %} <code>{{ f.path }}{% if f.line %}:{{ f.line }}{% endif %}</code>{% endif %} — {{ f.message }}
+      {% if f.evidence %}<pre>{{ f.evidence }}</pre>{% endif %}</li>
+  {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{% if change_set %}
+<section>
+  <h2>Change set <span class="muted">({{ change_set.changes | length }} since <code>{{ change_set.checkpoint_id }}</code>)</span></h2>
+  <div class="groups">
+  {% for cls, items in groups.items() %}
+    <div class="group c-{{ cls.value }}">
+      <h3>{{ cls.value }} <span class="muted">{{ items | length }}</span></h3>
+      <ul>{% for c in items %}<li>{{ c.summary }}</li>{% else %}<li class="muted">none</li>{% endfor %}</ul>
+    </div>
+  {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if report %}
+<section>
+  <h2>⏪ Rewind <code>{{ report.id }}</code></h2>
+  <section class="tiles">
+    <div class="tile"><span class="n">{{ '%.1f' % report.mitigated_after_s if report.mitigated_after_s is not none else '—' }}s</span><span class="l">to mitigate production</span></div>
+    <div class="tile"><span class="n">{{ '%.1f' % (report.finished_at - report.started_at).total_seconds() if report.finished_at else '—' }}s</span><span class="l">to restore everything</span></div>
+    <div class="tile {{ 'ok' if report.zero_drift else 'bl' }}"><span class="n">{{ 'zero' if report.zero_drift else report.verification.drift | length if report.verification else '?' }}</span><span class="l">drift after verification</span></div>
+  </section>
+  <div class="table-wrap"><table>
+    <thead><tr><th>#</th><th>Inverse</th><th>Outcome</th><th>Detail</th><th>ms</th></tr></thead>
+    <tbody>{% for s in report.steps %}
+      <tr><td>{{ loop.index }}</td><td>{{ s.action }}</td><td><span class="pill o-{{ s.outcome.value }}">{{ s.outcome.value }}</span></td><td class="muted">{{ s.detail }}</td><td>{{ s.duration_ms }}</td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+  {% if report.verification and report.verification.drift %}
+  <h3>Drift</h3><ul>{% for d in report.verification.drift %}<li>{{ d }}</li>{% endfor %}</ul>
+  {% endif %}
+</section>
+{% endif %}
+
+<section>
+  <h2>Timeline</h2>
+  <ol class="timeline">
+  {% for ev in run.timeline %}
+    <li><time>{{ ev.at.strftime('%H:%M:%S') }}</time> <span class="state s-{{ ev.state }}">{{ ev.state }}</span> {{ ev.message }}</li>
+  {% endfor %}
+  </ol>
+</section>
+{% endblock %}

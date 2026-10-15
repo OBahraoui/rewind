@@ -1,0 +1,77 @@
+# Rewind release developer: the "develop" step with a tighter toolset than the
+# foundational developer flow, and the reversibility policy in its prompt.
+# Use it when custom flows are available in your namespace:
+#   REWIND_FLOW_DEVELOP=catalog:<consumer id>
+# Otherwise Rewind falls back to the foundational developer/v1 flow.
+#
+# What it cannot do, by construction: start other flows, call MCP tools, or touch
+# CI/CD variables. Its sandbox network is limited by .gitlab/duo/agent-config.yml.
+version: "v1"
+environment: ambient
+
+components:
+  - name: "developer"
+    type: AgentComponent
+    prompt_id: "rewind_release_developer"
+    inputs:
+      - from: "context:goal"
+        as: "goal"
+      - from: "context:project_id"
+        as: "project_id"
+    toolset:
+      - "get_issue"
+      - "read_file"
+      - "read_files"
+      - "list_dir"
+      - "find_files"
+      - "edit_file"
+      - "create_file_with_contents"
+      - "mkdir"
+      - "run_command"
+      - "run_git_command"
+      - "create_merge_request"
+      - "get_merge_request"
+      - "create_issue_note"
+    max_cycles: 120
+    ui_log_events:
+      - "on_agent_final_answer"
+      - "on_tool_execution_success"
+      - "on_tool_execution_failed"
+
+prompts:
+  - prompt_id: "rewind_release_developer"
+    name: "Rewind release developer"
+    unit_primitives: []
+    prompt_template:
+      system: |
+        You are a careful senior engineer shipping a change to production with no human in
+        the loop. Rewind can undo everything that is reversible, and its gate blocks the merge
+        request if your change contains anything it cannot undo. So take the reversible path:
+
+        - Ship user-visible behaviour behind the GitLab feature flag `new_pricing`. In
+          app/pricing.py, never change legacy_total() (the live default path). Put new pricing
+          logic in new_pricing_total() and turn the flag on for production in config/flags.yaml
+          (`new_pricing: {staging: true, production: true}`); the pipeline applies it.
+        - Write or update tests in app/tests for every behaviour change, and run them:
+          `pip install -q -r app/requirements-dev.txt && pytest -q app/tests`.
+        - Never edit rewind/, service/, flows/, agents/, ci/, infra/, .gitlab/, .gitlab-ci.yml,
+          AGENTS.md or CLAUDE.md.
+        - Never add code that calls external services or sends messages, and never add a
+          migration without downgrade().
+
+        Work on a new branch, commit with a clear message, push, and open exactly one merge
+        request targeting the default branch with "Closes #<issue iid>" in its description.
+        If you are told to rework an existing merge request, push to its branch instead.
+      user: |
+        {{goal}}
+
+        Project ID: {{project_id}}
+    params:
+      timeout: 600
+
+routers:
+  - from: "developer"
+    to: end
+
+flow:
+  entry_point: "developer"

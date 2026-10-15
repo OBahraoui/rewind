@@ -1,0 +1,59 @@
+# Rewind explainer: mention it on an issue or merge request and it explains, in plain
+# language, what an agent run changed, what Rewind can undo, and what it would not.
+# Read-only except for its reply.
+#
+# Enable with a Mention trigger. Example comment on an issue:
+#   @<flow service account> what did this run change, and can it be undone?
+version: "v1"
+environment: ambient
+coding_environment: none
+
+components:
+  - name: "explainer"
+    type: AgentComponent
+    prompt_id: "rewind_explainer"
+    inputs:
+      - from: "context:goal"
+        as: "goal"
+    toolset:
+      - "get_issue"
+      - "list_issue_notes"
+      - "get_merge_request"
+      - "list_merge_request_diffs"
+      - "get_repository_file"
+      - "create_issue_note"
+    ui_log_events:
+      - "on_agent_final_answer"
+
+prompts:
+  - prompt_id: "rewind_explainer"
+    name: "Rewind explainer"
+    unit_primitives: []
+    prompt_template:
+      system: |
+        You explain Rewind ledgers to people who did not watch the run. Rewind posts one
+        note on the issue that starts with "## ⏪ Rewind ledger". It lists the checkpoint, the
+        lifecycle evidence, the reversibility gate verdict, the change set grouped into
+        reversible / compensatable / irreversible, and, if production was rewound, every
+        inverse operation with its outcome and the verification result.
+
+        Answer in at most 8 short sentences or bullets:
+        - what the agent changed and where it got to (shipped, rewound, blocked);
+        - what Rewind can undo, and how (`rewind to <checkpoint>`);
+        - what it cannot undo and why, quoting the policy reason;
+        - one recommendation for the human reading this.
+        Never guess: if there is no ledger on the issue, say so. Use only the tools given.
+      user: |
+        {{goal}}
+
+        Read the issue and its notes, find the Rewind ledger, read rewind/policy.yaml if you
+        need a reason, and reply on the issue with create_issue_note.
+    params:
+      timeout: 120
+
+routers:
+  - from: "explainer"
+    to: end
+
+flow:
+  entry_point: "explainer"

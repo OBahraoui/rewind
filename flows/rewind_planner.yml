@@ -1,0 +1,85 @@
+# Rewind planner: the "plan" step of the hands-off loop.
+# Reads the issue and the reversibility policy, then posts one plan comment that
+# classifies every planned change as reversible / compensatable / irreversible.
+# Read-only on the repository; its only write is the comment.
+#
+# Create in GitLab: AI > Flows > New flow (paste this file), then Enable it in the
+# project. Put the AI Catalog consumer ID in .env as REWIND_FLOW_PLAN=catalog:<id>.
+version: "v1"
+environment: ambient
+coding_environment: none
+
+components:
+  - name: "planner"
+    type: AgentComponent
+    prompt_id: "rewind_planner"
+    inputs:
+      - from: "context:goal"
+        as: "goal"
+      - from: "context:project_id"
+        as: "project_id"
+    toolset:
+      - "get_issue"
+      - "list_issue_notes"
+      - "get_repository_file"
+      - "list_repository_tree"
+      - "create_issue_note"
+    ui_log_events:
+      - "on_agent_final_answer"
+      - "on_tool_execution_success"
+      - "on_tool_execution_failed"
+
+prompts:
+  - prompt_id: "rewind_planner"
+    name: "Rewind planner"
+    unit_primitives: []
+    prompt_template:
+      system: |
+        You plan software changes for a project where autonomous agents ship to production
+        hands-off. A service called Rewind checkpoints the project before agents act and can
+        undo any reversible change in one command. Autonomy is set by reversibility:
+        reversible and compensatable changes ship hands-off; irreversible ones need a human.
+
+        Classes (from rewind/policy.yaml in the repository):
+        - reversible: the exact prior state can be restored (feature flags, labels, issue
+          state, Cloud Run traffic, unprotected branches).
+        - compensatable: neutralised by a new recorded action (merged code is restored by a
+          restore commit; created issues/MRs are closed with a note; releases removed).
+        - irreversible: cannot be undone (messages or calls to external systems, migrations
+          without downgrade, CI/CD variable values, deleted issues or MRs).
+
+        Project rules: user-visible behaviour ships behind the GitLab feature flag
+        `new_pricing`; legacy_total() in app/pricing.py is the live default path and must not
+        change; new pricing goes in new_pricing_total(). Agents may not edit rewind/, service/,
+        flows/, agents/, ci/, infra/, .gitlab/ or .gitlab-ci.yml.
+
+        Be concise and concrete. Never invent files; read them first.
+      user: |
+        {{goal}}
+
+        Project ID: {{project_id}}
+
+        Steps:
+        1. Read the issue (get_issue) and rewind/policy.yaml (get_repository_file).
+        2. Look at the files you would change (list_repository_tree, get_repository_file).
+        3. Post exactly one comment on the issue (create_issue_note) in this format:
+
+           ### 🧭 Plan
+           1. <change> — `<file>`
+           ...
+           ### Reversibility
+           | Change | Class | Why |
+           |---|---|---|
+           ...
+           **Verdict:** <"Fully undoable: can ship hands-off" or "Contains irreversible steps: needs a human">
+
+        Do not modify code, branches or merge requests.
+    params:
+      timeout: 180
+
+routers:
+  - from: "planner"
+    to: end
+
+flow:
+  entry_point: "planner"

@@ -1,0 +1,6 @@
+# Desired GitLab feature flag state per environment.
+# The pipeline's configure stage applies it after each deploy (ci/apply_flags.py).
+# Rewind snapshots the live flags, so a rewind switches them back.
+new_pricing:
+  staging: true
+  production: false

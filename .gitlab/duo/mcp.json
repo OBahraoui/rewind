@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "rewind": {
+      "type": "http",
+      "url": "https://REPLACE-WITH-REWIND_PUBLIC_URL/mcp/",
+      "approvedTools": ["rewind_policy", "classify_action", "check_paths", "list_checkpoints", "get_ledger", "explain_checkpoint"]
+    }
+  }
+}

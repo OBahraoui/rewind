@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Rewind · {{ project }}{% endblock %}
+{% block content %}
+<section class="hero">
+  <h1>{{ project }}</h1>
+  <p class="muted">Every autonomous run, checkpointed before agents act, gated by reversibility, and undoable in one command.</p>
+</section>
+<section class="tiles">
+  <div class="tile"><span class="n">{{ stats.runs }}</span><span class="l">runs</span></div>
+  <div class="tile ok"><span class="n">{{ stats.shipped }}</span><span class="l">shipped hands-off</span></div>
+  <div class="tile rw"><span class="n">{{ stats.rewound }}</span><span class="l">rewound</span></div>
+  <div class="tile bl"><span class="n">{{ stats.blocked }}</span><span class="l">blocked by the gate</span></div>
+</section>
+<section>
+  <h2>Runs</h2>
+  {% if not runs %}<p class="muted">No runs yet. Label an issue <code>rewind:auto</code> to start one.</p>{% else %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Issue</th><th>Status</th><th>Gate</th><th>Change set</th><th>Checkpoint</th><th>Updated</th></tr></thead>
+    <tbody>
+    {% for r in runs %}
+      <tr>
+        <td><a href="/runs/{{ r.id }}">#{{ r.issue_iid }} {{ r.issue_title }}</a></td>
+        <td><span class="state s-{{ r.state }}">{{ status[r.state] }}</span></td>
+        <td>{% if r.gate %}<span class="pill g-{{ r.gate }}">{{ r.gate }}</span>{% else %}—{% endif %}</td>
+        <td class="counts">
+          {% if r.counts %}
+          <span class="pill c-reversible" title="reversible">{{ r.counts.get('reversible', 0) }}</span>
+          <span class="pill c-compensatable" title="compensatable">{{ r.counts.get('compensatable', 0) }}</span>
+          <span class="pill c-irreversible" title="irreversible">{{ r.counts.get('irreversible', 0) }}</span>
+          {% else %}—{% endif %}
+        </td>
+        <td><code>{{ r.checkpoint_id or '—' }}</code></td>
+        <td class="muted">{{ r.updated_at[:19].replace('T', ' ') }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% endif %}
+</section>
+<section class="legend">
+  <span class="pill c-reversible">reversible</span> restored exactly
+  <span class="pill c-compensatable">compensatable</span> neutralised by a recorded action
+  <span class="pill c-irreversible">irreversible</span> gated, never "undone"
+</section>
+{% endblock %}
