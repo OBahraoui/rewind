@@ -250,3 +250,22 @@ def test_variable_created_and_metadata_round_trip(engine, gl):
     assert ("AGENT_VAR", "*") not in gl.variables
     assert gl.variables[("API_URL", "*")]["protected"] is False
     assert gl.variables[("API_URL", "*")]["value"] == "https://api.internal"
+
+
+def test_restore_falls_back_to_direct_commit_when_mr_cannot_merge(engine, gl, monkeypatch):
+    from rewind.http import ApiError
+
+    cp = engine.checkpoint()
+    tree = gl.tree("main")
+    gl.commit_files("main", {"README.md": "agent\n"})
+
+    def never(*a, **k):
+        raise ApiError("PUT", "merge", 405, "Method Not Allowed: pipeline must succeed")
+
+    monkeypatch.setattr(gl, "merge_merge_request", never)
+    report = engine.rewind(cp.id)
+    assert report.zero_drift, report.verification
+    assert gl.tree("main") == tree
+    restore_mr = next(m for m in gl.mrs.values() if m["source_branch"].startswith("rewind/"))
+    assert restore_mr["state"] == "closed"
+    assert "MR merge unavailable" in next(s for s in report.steps if s.kind == "repository").detail

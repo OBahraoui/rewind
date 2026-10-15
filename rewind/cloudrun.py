@@ -104,6 +104,14 @@ class CloudRunClient:
             "_uri": svc.get("uri", ""),
         }
 
+    def list_revisions(self, environment: str) -> list[str]:
+        """Ready revision names, newest first."""
+        body = self._api.json("GET", f"/{self._name(environment)}/revisions")
+        revs = sorted(body.get("revisions", []), key=lambda r: r.get("createTime", ""), reverse=True)
+        ready = [r for r in revs if any(c.get("type") == "Ready" and c.get("state") == "CONDITION_SUCCEEDED"
+                                        for c in r.get("conditions", []))]
+        return [short_revision(r["name"]) for r in ready]
+
     def pin_traffic(self, environment: str, split: list[list[Any]], *, timeout_s: float = 120) -> None:
         """Route traffic exactly as `split` ([[revision, percent], ...]) and wait until it is live."""
         svc = self.get_service(environment)

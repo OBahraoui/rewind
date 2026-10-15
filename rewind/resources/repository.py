@@ -75,8 +75,16 @@ class RepositoryHandler(Handler):
             description=f"Automatic restore by Rewind.\n\nCheckpoint `{ctx.checkpoint_id}` · rewind `{ctx.rewind_id}`",
             labels=["rewind:restore"],
         )
-        merged = merge_when_mergeable(ctx, mr["iid"], commit["id"],
-                                      f"Merge {title}\n\n{REWIND_MARKER}")
+        try:
+            merged = merge_when_mergeable(ctx, mr["iid"], commit["id"], f"Merge {title}\n\n{REWIND_MARKER}")
+        except RuntimeError as exc:
+            # e.g. "pipelines must succeed" is on: don't wait minutes with production code wrong.
+            ctx.gitlab.create_mr_note(mr["iid"], f"Rewind could not merge this restore immediately ({exc}); "
+                                                 f"it committed the same restore directly to `{branch}` instead.")
+            ctx.gitlab.update_merge_request(mr["iid"], state_event="close")
+            ctx.gitlab.delete_branch(work)
+            direct = ctx.gitlab.create_commit(branch, message, actions)
+            return f"restore commit {direct['id'][:8]} on {branch} ({len(actions)} paths; MR merge unavailable)"
         return f"restore commit {commit['id'][:8]} merged via !{merged['iid']} ({len(actions)} paths)"
 
 
