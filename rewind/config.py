@@ -12,10 +12,15 @@ class ConfigError(RuntimeError):
 
 
 def load_dotenv(path: str | os.PathLike[str] = ".env") -> None:
-    """Load KEY=VALUE lines into os.environ without overriding real env vars."""
+    """Load KEY=VALUE lines into os.environ without overriding real env vars.
+
+    Later lines win over earlier ones (so `rewind keys >> .env` works), and empty values are skipped
+    so a blank template line never masks a default.
+    """
     p = Path(path)
     if not p.is_file():
         return
+    values: dict[str, str] = {}
     for raw in p.read_text(encoding="utf-8").splitlines():
         line = raw.strip()
         if not line or line.startswith("#") or "=" not in line:
@@ -25,6 +30,9 @@ def load_dotenv(path: str | os.PathLike[str] = ".env") -> None:
         value = value.strip()
         if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
             value = value[1:-1]
+        if value:
+            values[key] = value
+    for key, value in values.items():
         os.environ.setdefault(key, value)
 
 
