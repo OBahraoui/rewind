@@ -56,7 +56,7 @@ A cross-platform undo layer for agents: GitLab first, then GitHub, cloud and Saa
 GitLab, this is the "agent speculative execution and universal rollback" capability built from outside the platform.
 
 ## Links
-- GitLab project: <url>
+- GitLab project: https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43319182/showcase
 - Live dashboard (Cloud Run): <REWIND_PUBLIC_URL>
 - Demo app (production): <url>
 - Video: <YouTube url>

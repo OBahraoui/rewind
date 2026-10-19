@@ -125,7 +125,7 @@ Admin API, so it doesn't depend on any experimental agent feature to undo what a
 Prerequisites: Python 3.12+, `gcloud`, a GitLab project with Duo Agent Platform access (Maintainer), and a Google Cloud project with billing.
 
 ```bash
-git clone <this repo> && cd rewind
+git clone https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43319182/showcase.git rewind && cd rewind
 python3 -m venv .venv && . .venv/bin/activate && pip install -e ".[service,dev]"
 cp .env.example .env
 rewind keys >> .env          # generates REWIND_HASH_KEY, REWIND_API_TOKEN, GITLAB_WEBHOOK_SECRET
