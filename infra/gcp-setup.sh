@@ -73,11 +73,17 @@ gc storage buckets add-iam-policy-binding "gs://$BUCKET" --member "serviceAccoun
 echo "→ Workload Identity Federation for $GITLAB_URL project $GITLAB_PROJECT_PATH"
 exists gc iam workload-identity-pools describe "$POOL" --location global ||
   gc iam workload-identity-pools create "$POOL" --location global --display-name "GitLab"
-exists gc iam workload-identity-pools providers describe "$PROVIDER" --location global --workload-identity-pool "$POOL" ||
+WIF_MAPPING="google.subject=assertion.sub,attribute.project_path=assertion.project_path,attribute.ref=assertion.ref,attribute.ref_protected=assertion.ref_protected"
+WIF_CONDITION="assertion.project_path == '${GITLAB_PROJECT_PATH}'"
+if exists gc iam workload-identity-pools providers describe "$PROVIDER" --location global --workload-identity-pool "$POOL"; then
+  # Re-running with a different GITLAB_PROJECT_PATH must re-point the trust, not keep the old one.
+  gc iam workload-identity-pools providers update-oidc "$PROVIDER" --location global \
+    --workload-identity-pool "$POOL" --attribute-mapping "$WIF_MAPPING" --attribute-condition "$WIF_CONDITION"
+else
   gc iam workload-identity-pools providers create-oidc "$PROVIDER" --location global \
     --workload-identity-pool "$POOL" --issuer-uri "$GITLAB_URL" \
-    --attribute-mapping "google.subject=assertion.sub,attribute.project_path=assertion.project_path,attribute.ref=assertion.ref,attribute.ref_protected=assertion.ref_protected" \
-    --attribute-condition "assertion.project_path == '${GITLAB_PROJECT_PATH}'"
+    --attribute-mapping "$WIF_MAPPING" --attribute-condition "$WIF_CONDITION"
+fi
 WIF_PROVIDER="projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL}/providers/${PROVIDER}"
 gc iam service-accounts add-iam-policy-binding "$DEPLOY_SA" --role roles/iam.workloadIdentityUser \
   --member "principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL}/attribute.project_path/${GITLAB_PROJECT_PATH}" >/dev/null
