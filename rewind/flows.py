@@ -54,7 +54,8 @@ class Flows:
             "goal": goal,
             "start_workflow": True,
             "environment": "ambient",
-            # Least privilege per step. The platform decides pre-approval for ambient flows; a stall is failed by Rewind.
+            # Least privilege per step. The platform decides pre-approval for ambient flows;
+            # Rewind fails any run that stalls waiting for approval.
             "agent_privileges": privileges,
             "pre_approved_agent_privileges": privileges,
         }
