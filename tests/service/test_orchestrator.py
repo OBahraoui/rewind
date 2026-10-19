@@ -72,6 +72,8 @@ def drive_to_merge(orch, gl, cr, run, issue):
                           {"name": "semgrep-sast", "stage": "secure", "status": "success", "web_url": "u/2"}])
     run = orch.advance(run.id)
     assert run.state is RunState.REVIEWING
+    review = [c for c in gl.calls if c[0] == "start_workflow"][-1][2]
+    assert review["goal"] == str(mr)  # the code_review flow rejects any goal but the MR IID
     finish_flow(gl, run, "review")
     run = orch.advance(run.id)
     assert run.state is RunState.RELEASING, run.timeline[-1]
@@ -143,8 +145,10 @@ def test_unflagged_change_is_rerouted_then_allowed(orch, gl):
     finish_flow(gl, run, "develop")
     run = orch.advance(run.id)
     assert run.state is RunState.REROUTING
-    reroute_goal = [c for c in gl.calls if c[0] == "start_workflow"][-1][2]["goal"]
-    assert "new_pricing_total" in reroute_goal
+    reroute = [c for c in gl.calls if c[0] == "start_workflow"][-1][2]
+    assert "new_pricing_total" in reroute["goal"]
+    # GitLab answers 500 when issue_id and merge_request_id are combined: rework passes only the MR.
+    assert "issue_id" not in reroute and reroute["merge_request_id"] and reroute["source_branch"]
     # The agent follows the instruction on the same branch.
     flagged = "def new_pricing_total(items):\n    return sum(items) - 15"
     gl.commit_files("agent/feature", {"app/pricing.py": PRICING.replace(

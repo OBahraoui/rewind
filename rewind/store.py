@@ -124,9 +124,9 @@ class GCSStore(Store):
         self._api = RetryingClient("https://storage.googleapis.com",
                                    lambda: {"Authorization": f"Bearer {tok()}"}, transport=transport)
 
-    def _upload(self, key: str, data: dict[str, Any], **params: Any) -> None:
+    def _upload(self, key: str, data: dict[str, Any], *, idempotent: bool = True, **params: Any) -> None:
         self._api.request(
-            "POST", f"/upload/storage/v1/b/{self.bucket}/o",
+            "POST", f"/upload/storage/v1/b/{self.bucket}/o", idempotent=idempotent,
             params={"uploadType": "media", "name": key, **params},
             content=json.dumps(data, default=str).encode(),
             headers={"Content-Type": "application/json"},
@@ -137,7 +137,7 @@ class GCSStore(Store):
 
     def create(self, key: str, data: dict[str, Any]) -> None:
         try:
-            self._upload(key, data, ifGenerationMatch=0)
+            self._upload(key, data, idempotent=False, ifGenerationMatch=0)
         except ApiError as exc:
             if exc.status == 412:
                 raise AlreadyExists(key) from None

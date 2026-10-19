@@ -138,3 +138,53 @@ def test_gcs_create_is_atomic():
     assert store.get("locks/x.json") == {"a": 1}
     store.delete("locks/x.json")
     assert store.get("locks/x.json") is None
+
+
+def test_post_is_not_retried_after_a_5xx_but_is_after_429():
+    """A 5xx may arrive after the server acted: repeating start_workflow would start a second flow."""
+    calls = {"n": 0}
+
+    def five_hundred(req):
+        calls["n"] += 1
+        return httpx.Response(500, json={"message": "boom"})
+
+    with pytest.raises(ApiError):
+        gitlab(five_hundred).start_workflow({"goal": "x"})
+    assert calls["n"] == 1
+
+    calls["n"] = 0
+
+    def rate_limited_once(req):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return httpx.Response(429, headers={"retry-after": "0"})
+        return httpx.Response(201, json={"id": 5})
+
+    assert gitlab(rate_limited_once).start_workflow({"goal": "x"})["id"] == 5
+    assert calls["n"] == 2
+
+
+def test_post_is_not_retried_after_a_read_timeout():
+    calls = {"n": 0}
+
+    def slow(req):
+        calls["n"] += 1
+        raise httpx.ReadTimeout("slow", request=req)
+
+    with pytest.raises(httpx.ReadTimeout):
+        gitlab(slow).create_issue_note(1, "hello")
+    assert calls["n"] == 1
+
+
+def test_graphql_queries_are_retried():
+    calls = {"n": 0}
+
+    def flaky(req):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            return httpx.Response(502)
+        nodes = [{"id": "x", "status": "RUNNING"}]
+        return httpx.Response(200, json={"data": {"duoWorkflowWorkflows": {"nodes": nodes}}})
+
+    assert gitlab(flaky).workflow_status(1)["status"] == "running"
+    assert calls["n"] == 3

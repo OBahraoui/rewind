@@ -57,4 +57,5 @@ never delete or skip a test to make it pass.
 
 
 def review(mr_iid: int) -> str:
-    return f"Review merge request !{mr_iid} for correctness, security and test coverage."
+    """The code_review flow rejects any goal that isn't the merge request IID (or URL)."""
+    return str(mr_iid)

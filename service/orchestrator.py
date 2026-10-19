@@ -136,7 +136,11 @@ class Orchestrator:
         earlier = [r for r in self.repo.active() if r.id != run.id and r.created_at < run.created_at]
         if earlier:
             return  # serialized: wait for the project's current run
-        cp = self.engine.checkpoint(f"run {run.id} · issue #{run.issue_iid}", run_id=run.id, issue_iid=run.issue_iid)
+        if run.checkpoint_id:  # a retry after a failed flow start must keep the original checkpoint
+            cp = self.engine.get_checkpoint(run.checkpoint_id)
+        else:
+            cp = self.engine.checkpoint(f"run {run.id} · issue #{run.issue_iid}", run_id=run.id,
+                                        issue_iid=run.issue_iid)
         run.checkpoint_id = cp.id
         serving = ", ".join(f"{env}: {rev}" for env, rev in cp.serving.items()) or "not tracked"
         run.add_evidence("govern", f"Checkpoint {cp.id} (default branch {cp.default_sha[:8]}, {serving})", "recorded")
@@ -224,7 +228,7 @@ class Orchestrator:
             flow = self.flows.start(
                 "develop", goals.reroute(run.mr_iid, mr["source_branch"], [f.message for f in decision.findings],
                                          decision.instructions),
-                issue_iid=run.issue_iid, mr_iid=run.mr_iid, source_branch=mr["source_branch"])
+                mr_iid=run.mr_iid, source_branch=mr["source_branch"])  # issue_id + mr_id is a GitLab 500
             run.flows.append(flow)
             run.move(RunState.REROUTING, f"gate rerouted: {decision.instructions[0] if decision.instructions else ''}")
         else:

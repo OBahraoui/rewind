@@ -67,7 +67,7 @@ Admin API, so it doesn't depend on any experimental agent feature to undo what a
 1. **Trigger**: label an issue `rewind:auto`. The webhook reaches Rewind, which serializes runs per project so every change set is attributable.
 2. **Checkpoint**: snapshot the project and the serving Cloud Run revisions. The ID goes on the issue and the MR.
 3. **Plan**: the custom planner flow ([`flows/rewind_planner.yml`](flows/rewind_planner.yml)) posts a plan that classifies every step by reversibility.
-4. **Develop**: the developer flow opens an MR. It gets only the privileges the policy allows for that step, all pre-approved, so it never stalls waiting on a human.
+4. **Develop**: the developer flow opens an MR. It gets only the privileges the policy allows for that step (and Rewind treats any approval stall as a failure after a short grace period, so a hands-off run never waits on a human).
 5. **Gate**: Rewind diffs the project against the checkpoint and checks the MR's code.
    - *allow*: everything is undoable.
    - *reroute*: e.g. the live pricing path was changed, so the agent is told to move it behind the flag. Then it's gated again.
@@ -114,7 +114,7 @@ Admin API, so it doesn't depend on any experimental agent feature to undo what a
 
 ## Duo Agent Platform features used
 
-- **Flows via API**: plan, develop, review and fix-pipeline steps, started with least-privilege `agent_privileges` per step (from policy) and the same list pre-approved, so a hands-off run never waits on a human. `start_flows` is never granted, because a flow that starts flows would act outside the checkpoint.
+- **Flows via API**: plan, develop, review and fix-pipeline steps, started with least-privilege `agent_privileges` per step (from policy). Ambient flows run without per-tool prompts, and Rewind fails a run that stalls waiting for approval. `start_flows` is never granted, because a flow that starts flows would act outside the checkpoint.
 - **Custom flows (Flow Registry v1)**: [`rewind_planner`](flows/rewind_planner.yml), [`rewind_release`](flows/rewind_release.yml) (tighter toolset), [`rewind_explainer`](flows/rewind_explainer.yml) (mention trigger).
 - **Custom agent**: [Rewind explainer](agents/rewind-explainer.md) for Duo Chat.
 - **MCP**: Rewind serves read-only MCP tools at `/mcp/` (`classify_action`, `check_paths`, `rewind_policy`, `get_ledger`, `explain_checkpoint`), so agents can ask *before* they act. See [`.gitlab/duo/mcp.json`](.gitlab/duo/mcp.json).

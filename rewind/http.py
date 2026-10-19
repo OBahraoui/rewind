@@ -13,6 +13,7 @@ import httpx
 log = logging.getLogger("rewind.http")
 
 RETRY_STATUS = {429, 500, 502, 503, 504}
+SAFE_METHODS = {"GET", "HEAD", "PUT", "PATCH", "DELETE", "OPTIONS"}
 
 
 class ApiError(RuntimeError):
@@ -40,8 +41,10 @@ def _retry_after(resp: httpx.Response | None) -> float | None:
 class RetryingClient:
     """httpx.Client wrapper that retries transient failures with jittered backoff.
 
-    Every Rewind operation is idempotent (it re-checks live state before acting),
-    so retrying writes after a 429/5xx is safe.
+    A 5xx can arrive *after* the server acted, so repeating a POST could start a second Duo
+    flow or post a second note. POSTs therefore retry only 429 (rejected, not processed) and
+    connection failures (never sent). Pass `idempotent=True` for POSTs that are safe to repeat
+    (GraphQL queries, content-addressed uploads).
     """
 
     def __init__(
@@ -67,17 +70,22 @@ class RetryingClient:
     def _hdrs(self) -> dict[str, str]:
         return self._headers() if callable(self._headers) else self._headers
 
-    def request(self, method: str, url: str, **kw: Any) -> httpx.Response:
+    def request(self, method: str, url: str, *, idempotent: bool | None = None, **kw: Any) -> httpx.Response:
         last_exc: Exception | None = None
         resp: httpx.Response | None = None
         extra_headers = kw.pop("headers", None) or {}
+        if idempotent is None:
+            idempotent = method.upper() in SAFE_METHODS
         for attempt in range(1, self._attempts + 1):
             try:
                 resp = self.http.request(method, url, headers={**self._hdrs(), **extra_headers}, **kw)
             except httpx.TransportError as exc:  # connection reset, timeout, DNS
+                if not idempotent and not isinstance(exc, httpx.ConnectError | httpx.ConnectTimeout):
+                    raise  # the request may have been processed; don't repeat it blindly
                 last_exc, resp = exc, None
             else:
-                if resp.status_code not in RETRY_STATUS:
+                retryable = resp.status_code == 429 or (resp.status_code in RETRY_STATUS and idempotent)
+                if not retryable:
                     break
             if attempt == self._attempts:
                 break
@@ -97,8 +105,8 @@ class RetryingClient:
             raise ApiError(method, url, resp.status_code, resp.text)
         return resp
 
-    def json(self, method: str, url: str, **kw: Any) -> Any:
-        resp = self.request(method, url, **kw)
+    def json(self, method: str, url: str, *, idempotent: bool | None = None, **kw: Any) -> Any:
+        resp = self.request(method, url, idempotent=idempotent, **kw)
         if resp.status_code == 204 or not resp.content:
             return None
         return resp.json()

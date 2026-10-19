@@ -54,7 +54,7 @@ class Flows:
             "goal": goal,
             "start_workflow": True,
             "environment": "ambient",
-            # Least privilege per step; everything granted is pre-approved so the run never waits on a human.
+            # Least privilege per step. The platform decides pre-approval for ambient flows; a stall is failed by Rewind.
             "agent_privileges": privileges,
             "pre_approved_agent_privileges": privileges,
         }

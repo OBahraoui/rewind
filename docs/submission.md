@@ -29,8 +29,7 @@ Rewind sits outside the agents and makes their work undoable as one unit.
 
 ## How we built it
 - **GitLab Duo Agent Platform**: flows started through the Flows API with least-privilege
-  `agent_privileges` per step from policy, all pre-approved so a hands-off run never waits on a
-  human (`start_flows` is never granted). Three custom flows (planner with a reversibility
+  `agent_privileges` per step from policy (`start_flows` is never granted), and any approval stall fails the run. Three custom flows (planner with a reversibility
   table, a tighter developer, a mention-triggered explainer), a custom Duo Chat agent, an MCP
   server so agents can ask Rewind *before* they act, and `agent-config.yml` restricting the
   sandbox network.

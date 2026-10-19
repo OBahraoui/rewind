@@ -67,7 +67,8 @@ class GitLabClient:
             page = int(nxt)
 
     def graphql(self, query: str, variables: dict[str, Any] | None = None) -> dict[str, Any]:
-        body = self._gql.json("POST", "/api/graphql", json={"query": query, "variables": variables or {}})
+        body = self._gql.json("POST", "/api/graphql", idempotent=True,
+                              json={"query": query, "variables": variables or {}})
         if body.get("errors"):
             raise RuntimeError(f"GraphQL errors: {body['errors']}")
         return body["data"]
