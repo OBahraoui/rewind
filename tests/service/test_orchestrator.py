@@ -53,7 +53,8 @@ def agent_opens_mr(gl, issue, pricing_body: str, extra: dict | None = None) -> i
     files = {"app/pricing.py": PRICING.replace("def new_pricing_total(items):\n    return sum(items)", pricing_body),
              "config/flags.yaml": "new_pricing:\n  staging: true\n  production: true\n", **(extra or {})}
     gl.commit_files("agent/feature", files)
-    return gl.create_merge_request("agent/feature", "main", "Promo pricing", description=f"Closes #{issue}")["iid"]
+    mr = gl.create_merge_request("agent/feature", "main", "Draft: Promo pricing", description=f"Closes #{issue}")
+    return mr["iid"]
 
 
 def drive_to_merge(orch, gl, cr, run, issue):
@@ -138,7 +139,7 @@ def test_unflagged_change_is_rerouted_then_allowed(orch, gl):
     run = orch.advance(run.id)
     gl.commit_files("agent/feature", {"app/pricing.py": PRICING.replace(
         "def legacy_total(items):\n    return sum(items)", "def legacy_total(items):\n    return sum(items) - 15")})
-    gl.create_merge_request("agent/feature", "main", "Promo", description=f"Closes #{issue}")
+    gl.create_merge_request("agent/feature", "main", "Draft: Promo", description=f"Closes #{issue}")
     finish_flow(gl, run, "develop")
     run = orch.advance(run.id)
     assert run.state is RunState.REROUTING
@@ -211,3 +212,12 @@ def test_merge_refused_if_head_moved_after_gate(orch, gl, cr):
     run = orch.advance(run.id)
     assert run.state is RunState.BLOCKED  # re-gated, and the new commit is irreversible
     assert gl.mrs[mr]["state"] == "opened"
+
+
+def test_draft_merge_request_is_marked_ready_before_merge(orch, gl, cr):
+    issue = gl.add_issue("Promo pricing", labels=["rewind:auto"])
+    run = drive_to_merge(orch, gl, cr, orch.start_run(issue), issue)
+    mr = gl.mrs[run.mr_iid]
+    assert mr["state"] == "merged"
+    assert not mr["title"].lower().startswith("draft")
+    assert any("marked the merge request ready" in e.message for e in run.timeline)

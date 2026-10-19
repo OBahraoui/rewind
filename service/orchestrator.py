@@ -9,6 +9,7 @@ Runs are serialized per project so every change set is attributable to one run.
 from __future__ import annotations
 
 import logging
+import re
 import threading
 from datetime import timedelta
 from typing import Any
@@ -37,6 +38,9 @@ TIMEOUTS = {
     RunState.RELEASING: timedelta(minutes=45),
 }
 NEEDS_HUMAN_GRACE = timedelta(minutes=3)
+
+# Duo's developer flow opens merge requests as drafts, and GitLab refuses to merge a draft.
+DRAFT_PREFIX = re.compile(r"^\s*(\[draft\]|\(draft\)|draft:)\s*", re.IGNORECASE)
 
 # Pipeline stage -> DevSecOps lifecycle stage, for evidence links.
 STAGE_MAP = {"verify": "verify", "package": "package", "secure": "secure", "test": "secure",
@@ -299,6 +303,10 @@ class Orchestrator:
         if mr["sha"] != run.gated_sha:
             run.move(RunState.GATING, "MR head moved before merge; gating again")
             return
+        if mr.get("draft") or mr.get("work_in_progress"):
+            mr["title"] = DRAFT_PREFIX.sub("", mr["title"]) or mr["title"]
+            self.gitlab.update_merge_request(run.mr_iid, title=mr["title"])
+            run.note("marked the merge request ready: agents open merge requests as drafts")
         message = (f"Merge !{run.mr_iid}: {mr['title']}\n\nRewind-Run: {run.id}\n"
                    f"Rewind-Checkpoint: {run.checkpoint_id}")
         try:

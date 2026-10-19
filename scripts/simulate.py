@@ -58,7 +58,7 @@ def run_scenario(app, gl, cr, title: str, pricing_change: str, *, monitor_ok: bo
                              "config/flags.yaml": "new_pricing:\n  staging: true\n  production: true\n",
                              f"app/tests/test_issue_{issue}.py": "def test_ok():\n    assert True\n",
                              **(extra or {})})
-    mr = gl.create_merge_request(branch, "main", title, description=f"Closes #{issue}")["iid"]
+    mr = gl.create_merge_request(branch, "main", f"Draft: {title}", description=f"Closes #{issue}")["iid"]
     finish("develop")
     run = orch.advance(run.id)
     if run.state.value == "rerouting":

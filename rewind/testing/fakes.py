@@ -278,7 +278,10 @@ class FakeGitLab:
     def _mr_json(self, iid: int) -> dict:
         m = self.mrs[iid]
         sha = self.branches[m["source_branch"]]["sha"] if m["source_branch"] in self.branches else m.get("sha")
-        return {**m, "iid": iid, "sha": sha, "web_url": f"https://gitlab.example/acme/shop/-/merge_requests/{iid}"}
+        draft = bool(re.match(r"^\s*(\[draft\]|\(draft\)|draft:)", m["title"], re.IGNORECASE))
+        return {**m, "iid": iid, "sha": sha, "draft": draft,
+                "detailed_merge_status": "draft_status" if draft else "mergeable",
+                "web_url": f"https://gitlab.example/acme/shop/-/merge_requests/{iid}"}
 
     @locked
     def list_merge_requests(self, **params: Any) -> list[dict]:
@@ -329,7 +332,7 @@ class FakeGitLab:
                             should_remove_source_branch: bool = True) -> dict:
         self._record("merge_merge_request", iid, sha=sha)
         m = self.mrs[iid]
-        if m["state"] != "opened":
+        if m["state"] != "opened" or self._mr_json(iid)["draft"]:
             raise ApiError("PUT", "merge", 405, "Method Not Allowed")
         src = self.branches[m["source_branch"]]["sha"]
         if sha and sha != src:
