@@ -1,0 +1,11 @@
+# Cloud Build uploads only what service/Dockerfile needs. Allowlist: everything else
+# (.env, .venv, .git, local stores, caches, notes) never leaves this machine.
+*
+!pyproject.toml
+!README.md
+!LICENSE
+!rewind/
+!rewind/**
+!service/
+!service/**
+**/__pycache__/

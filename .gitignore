@@ -18,3 +18,4 @@ gcp-key*.json
 
 # Private planning notes, not part of the submission
 Rewind — Build Plan*.pdf
+.hypothesis/

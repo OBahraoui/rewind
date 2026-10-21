@@ -48,6 +48,7 @@ sa() {  # name, description
 DEPLOY_SA="$(sa gitlab-deployer 'GitLab CI deployer (WIF)')"
 APP_SA="$(sa rewind-demo-app 'Rewind demo app runtime')"
 REWIND_SA="$(sa rewind-service 'Rewind service runtime')"
+BUILD_SA="$(sa rewind-builder 'Builds the Rewind service image (Cloud Build)')"
 
 echo "→ IAM: deployer can deploy the demo app and push images"
 for role in roles/run.admin roles/artifactregistry.writer; do
@@ -69,6 +70,17 @@ for runtime in "$APP_SA" "${PROJECT_NUMBER}-compute@developer.gserviceaccount.co
 done
 gc storage buckets add-iam-policy-binding "gs://$BUCKET" --member "serviceAccount:$REWIND_SA" \
   --role roles/storage.objectAdmin >/dev/null
+
+echo "→ IAM: a dedicated Cloud Build account (new projects' default compute account has no rights)"
+BUILD_BUCKET="gs://${GCP_PROJECT_ID}_cloudbuild"
+exists gcloud storage buckets describe "$BUILD_BUCKET" ||
+  gc storage buckets create "$BUILD_BUCKET" --location "$REGION" --uniform-bucket-level-access
+gc storage buckets add-iam-policy-binding "$BUILD_BUCKET" --member "serviceAccount:$BUILD_SA" \
+  --role roles/storage.objectViewer >/dev/null
+gc artifacts repositories add-iam-policy-binding "$REPO" --location "$REGION" \
+  --member "serviceAccount:$BUILD_SA" --role roles/artifactregistry.writer >/dev/null
+gc projects add-iam-policy-binding "$GCP_PROJECT_ID" --member "serviceAccount:$BUILD_SA" \
+  --role roles/logging.logWriter --condition=None >/dev/null
 
 echo "→ Workload Identity Federation for $GITLAB_URL project $GITLAB_PROJECT_PATH"
 exists gc iam workload-identity-pools describe "$POOL" --location global ||
@@ -107,4 +119,5 @@ GCP_WIF_PROVIDER=${WIF_PROVIDER}
 GCP_DEPLOY_SERVICE_ACCOUNT=${DEPLOY_SA}
 CLOUD_RUN_APP_SERVICE_ACCOUNT=${APP_SA}
 REWIND_SERVICE_ACCOUNT=${REWIND_SA}
+REWIND_BUILD_SERVICE_ACCOUNT=${BUILD_SA}
 EOF

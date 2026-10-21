@@ -13,6 +13,7 @@ SERVICE="${CLOUD_RUN_SERVICE_REWIND:-rewind}"
 TAG="$(git rev-parse --short HEAD 2>/dev/null || date +%s)"
 IMAGE="${REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${GCP_ARTIFACT_REPO:-rewind}/rewind:${TAG}"
 RUNTIME_SA="${REWIND_SERVICE_ACCOUNT:-rewind-service@${GCP_PROJECT_ID}.iam.gserviceaccount.com}"
+BUILD_SA="${REWIND_BUILD_SERVICE_ACCOUNT:-rewind-builder@${GCP_PROJECT_ID}.iam.gserviceaccount.com}"
 gc() { gcloud --project "$GCP_PROJECT_ID" --quiet "$@"; }
 
 echo "→ secrets"
@@ -22,15 +23,19 @@ put_secret rewind-hash-key "$REWIND_HASH_KEY"
 put_secret rewind-api-token "$REWIND_API_TOKEN"
 put_secret gitlab-webhook-secret "$GITLAB_WEBHOOK_SECRET"
 
-echo "→ building $IMAGE with Cloud Build (linux/amd64)"
+echo "→ building $IMAGE with Cloud Build (linux/amd64) as $BUILD_SA"
 CFG="$(mktemp)"
 cat > "$CFG" <<YAML
 steps:
   - name: gcr.io/cloud-builders/docker
     args: [build, -f, service/Dockerfile, -t, "$IMAGE", .]
 images: ["$IMAGE"]
+options:
+  logging: CLOUD_LOGGING_ONLY  # required when building as a user-specified service account
 YAML
-gc builds submit --config "$CFG" .
+# .gcloudignore limits the upload to what the Dockerfile needs.
+gc builds submit --config "$CFG" --service-account "projects/${GCP_PROJECT_ID}/serviceAccounts/${BUILD_SA}" \
+  --gcs-source-staging-dir "gs://${GCP_PROJECT_ID}_cloudbuild/source" .
 rm -f "$CFG"
 
 echo "→ deploying $SERVICE"
