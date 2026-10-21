@@ -41,6 +41,7 @@ LABELS = {
     "rewind:reversible": ("#2ecc71", "Everything this change ships can be undone"),
     "rewind:needs-human": ("#e67e22", "Contains something Rewind cannot undo"),
     "rewind:restore": ("#95a5a6", "Restore merge request created by Rewind"),
+    "rewind:incident": ("#c0392b", "Incident opened by Rewind when it rewinds production"),
 }
 
 

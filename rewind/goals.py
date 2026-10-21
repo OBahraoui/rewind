@@ -10,6 +10,7 @@ RULES = """Rules (Rewind's reversibility gate checks these before anything merge
 - Add or update tests in app/tests for every behaviour change.
 - Do not edit rewind/, service/, flows/, agents/, ci/, infra/, .gitlab/, .gitlab-ci.yml, AGENTS.md or CLAUDE.md.
 - Do not add code that calls external services or sends messages, and no migration without downgrade().
+- Never push to the default branch directly: only a gated merge request reaches it.
 Everything you change within these rules can be undone by Rewind in one command."""
 
 

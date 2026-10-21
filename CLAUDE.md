@@ -15,7 +15,12 @@ whole change set in mitigation order if production regresses.
     feature flag, CI variable, Cloud Run)
   - `policy.yaml` the reversibility policy (classification, privileges, gate rules)
   - `testing/fakes.py` in-memory GitLab and Cloud Run with real git-tree semantics
-- `service/` FastAPI on Cloud Run: webhooks, orchestrator (durable state machine), dashboard, MCP server
+  - `security.py` findings an agent introduced (from scanner report artifacts)
+  - `localgit.py` git-checkout backend so the gate runs as a CI job without a token
+- `service/` FastAPI on Cloud Run: webhooks (incl. `/rewind` comment commands), orchestrator (durable state
+  machine with step checkpoints, provenance, incidents, approvals, security-fix loop, default-branch guard,
+  credit guard), dashboard, MCP server
+- `templates/gate.yml` the reversibility gate as a GitLab CI/CD component (dogfooded in `.gitlab-ci.yml`)
 - `app/` demo orders service the agents change and deploy
 - `ci/` pipeline helpers (monitor, apply_flags, Cloud Run deploy, GCP auth), stdlib where possible
 - `flows/` Duo custom flows (Flow Registry v1); `agents/` custom agent definition
@@ -36,6 +41,11 @@ whole change set in mitigation order if production regresses.
 - Runs are serialized per project so every change set is attributable to one run.
 - Rewind's restore commits carry `[rewind]`; CI verifies them but never redeploys.
 - The gate runs before merge, on the exact head SHA; merge passes `sha=` so an ungated commit can't slip in.
+- Undo can be requested by a comment; accepting the irreversible only through the authenticated API (agents
+  comment with the user's identity). Approvals are bound to one commit.
+- Agent commits are recognised by their author (Duo flows commit as a group service account); an agent commit
+  on the default branch without a gated merge is rewound, a human one stops the run.
+- POSTs are never retried after a 5xx or timeout (could start a second flow).
 - Snapshots and ledgers are JSON in GCS (`gs://`) or a local dir (`file://`).
 - Prefer small, verified steps. Run `pytest` after each change. Keep README setup steps accurate.
 - License: MIT.

@@ -128,12 +128,26 @@ build-image:
       fi
 
 # ---------------------------------------------------------------- secure
+# Analyzers upload typed security reports; keeping the same files as plain artifacts lets
+# Rewind read them through the jobs API and send findings an agent introduced back to it.
 sast:
   stage: secure
+  artifacts:
+    paths: [gl-sast-report.json]
+    reports:
+      sast: gl-sast-report.json
 dependency_scanning:
   stage: secure
+  artifacts:
+    paths: [gl-dependency-scanning-report.json]
+    reports:
+      dependency_scanning: gl-dependency-scanning-report.json
 secret_detection:
   stage: secure
+  artifacts:
+    paths: [gl-secret-detection-report.json]
+    reports:
+      secret_detection: gl-secret-detection-report.json
 container_scanning:
   stage: secure
   needs: [build-image]

@@ -46,6 +46,8 @@ rewind bootstrap              # labels, flag, CI/CD variables, FLAGS_TOKEN, webh
 Set a budget alert on the GCP project (Billing > Budgets): a $10 cap is plenty.
 
 ✅ `rewind doctor` is all green, and the dashboard opens at `REWIND_PUBLIC_URL`.
+Re-run `rewind bootstrap` whenever you upgrade Rewind: it also subscribes the webhook to comments
+(for `/rewind`) and creates new labels.
 
 ## 5. First pipeline
 Push to the default branch. The pipeline deploys the demo app to staging and production.
@@ -60,6 +62,10 @@ python scripts/demo.py block
 ```
 ✅ Rewind scenario: ledger shows **zero drift**, production serves the checkpoint revision,
 `new_pricing` is off, issue reopened. Ship scenario: release created. Block scenario: `rewind:blocked`.
+
+Don't push to `main` while a run is in progress: Rewind stops the run rather than guess which
+changes were the agent's. Try a comment command on a finished run: `/rewind status`, then
+`/rewind dry-run`.
 
 If the agent "fixes" the promo (e.g. refuses to discount small orders), the monitor won't fail.
 That's a smart agent, not a Rewind bug: re-run, or use `rewind to <checkpoint>` on camera.

@@ -72,7 +72,7 @@ Admin API, so it doesn't depend on any experimental agent feature to undo what a
    - *allow*: everything is undoable.
    - *reroute*: e.g. the live pricing path was changed, so the agent is told to move it behind the flag. Then it's gated again.
    - *block*: e.g. new code calls an external service. The run stops for a human.
-6. **Verify and review**: the MR pipeline runs tests, SAST, dependency, secret and container scanning. If it fails, the fix-pipeline flow gets bounded attempts, and every new commit is gated again. Duo code review follows.
+6. **Verify, secure, review**: the MR pipeline runs tests, SAST, dependency, secret and container scanning, plus Rewind's own gate as a [CI/CD component](#use-the-gate-in-any-project). If it fails, the fix-pipeline flow gets bounded attempts. If the scanners find something in files *this change* touched, Rewind sends the findings back to an agent to fix. Every new commit is gated again. Duo code review follows.
 7. **Merge**: Rewind merges with `sha=<gated head>`, so a commit the gate never saw can't slip in.
 8. **Release**: package → staging (deploy, apply flags, smoke) → production → `configure` (apply `config/flags.yaml`) → `monitor` (3 minutes of synthetic traffic plus business invariants) → GitLab release.
 9. **Rewind**: if anything fails after merge, Rewind undoes the change set:
@@ -85,8 +85,24 @@ Admin API, so it doesn't depend on any experimental agent feature to undo what a
    | 4 | delete tags and releases created by the run | compensatable |
    | 5 | annotate the merged MR, close agent-created MRs and issues, reopen the original issue | compensatable / reversible |
 
-   Then it re-snapshots and **verifies**. Reversible changes must match the checkpoint exactly, and every compensation must be in place: zero drift.
-10. **Ledger**: one note on the issue, edited in place through the run. It holds lifecycle evidence, the gate verdict, the change set by class, every inverse with its outcome, and mitigation and restore times.
+   Then it re-snapshots and **verifies**. Reversible changes must match the checkpoint exactly, and every compensation must be in place: zero drift. Rewind opens a **GitLab incident** when the rewind starts and resolves it itself once verification passes.
+10. **Ledger**: one note on the issue, edited in place through the run. It holds lifecycle evidence, links to every Duo agent session, the gate verdict, the change set by class with **which session made each change**, every inverse with its outcome, and mitigation and restore times.
+
+Throughout the run, Rewind also watches the default branch. An agent commit that reaches `main` without the gate (Developers can push to `main` here) is rewound automatically. A human commit is never reverted; the run stops instead, because its change set is no longer attributable.
+
+### Humans in the loop, only where it matters
+
+Trust is asymmetric: undoing is cheap to authorize, and accepting the irreversible is not.
+
+| You want to | How | Who |
+|---|---|---|
+| Undo a run (shipped, blocked or releasing) | comment `/rewind` on the issue or MR | any project member with Developer or higher |
+| See the exact inverse plan first | comment `/rewind dry-run` | same |
+| See where a run is | comment `/rewind status` | same |
+| Undo only what came after one agent session | `rewind to <step checkpoint>` (listed in the ledger) | CLI |
+| Accept something Rewind can't undo | `rewind approve <run> --reason "..."` | only with Rewind's API token |
+
+Approvals are never taken from comments: Duo flows act with your identity, so a comment can't prove a human decided. An approval records who and why, and it covers only the exact commit approved. A new commit is gated again.
 
 ### Guarantees (each is tested)
 
@@ -97,28 +113,35 @@ Admin API, so it doesn't depend on any experimental agent feature to undo what a
 - **Fails closed**: unknown change kinds, objects with no baseline, and snapshot blind spots count as irreversible.
 - **Never stores secrets**: CI/CD variable values are reduced to keyed HMAC fingerprints. So a value change is honestly *irreversible*, and the gate blocks it.
 - **Property-tested**: random sequences of agent actions followed by a rewind always return to the checkpoint (500 runs: `REWIND_PROPERTY_EXAMPLES=500 pytest tests/rewind/test_property.py`).
+- **Safe retries**: writes are never repeated after an ambiguous failure (a 5xx or timeout), so a flaky API can't start a second agent or post twice.
+- **Credit guard**: Rewind starts at most `REWIND_MAX_FLOWS_PER_DAY` flows a day, so a loop can't burn your GitLab Credits.
 
 ## DevSecOps lifecycle: all nine stages
 
 | Stage | What happens | Evidence in the project |
 |---|---|---|
 | **plan** | Custom planner flow posts a plan with a reversibility class per step | plan comment on the issue · ledger |
-| **create** | Developer flow opens the MR; Rewind records the checkpoint on it | MR + checkpoint note |
+| **create** | Developer flow opens the MR; Rewind records the checkpoint on it and links the agent session | MR + checkpoint note |
 | **verify** | Unit + engine tests with coverage, lint, Duo code review | pipeline test report · coverage |
 | **package** | Container image built and pushed to the GitLab container registry (and Artifact Registry) | container registry |
-| **secure** | SAST, dependency scanning, secret detection, container scanning gate production | security reports |
+| **secure** | SAST, dependency scanning, secret detection and container scanning gate production; findings an agent introduced go back to an agent to fix | security reports · fix commit |
 | **release** | Gated merge, staging → production on Cloud Run, GitLab release after a healthy monitor | environments · releases |
 | **configure** | `config/flags.yaml` applied to GitLab feature flags per environment | feature flag history |
-| **monitor** | Synthetic traffic with business invariants; a failure triggers an automatic rewind | monitor job report · rewind ledger |
-| **govern** | Reversibility policy, gate verdicts, change-set ledger, verified undo record | [`rewind/policy.yaml`](rewind/policy.yaml) · ledger · dashboard |
+| **monitor** | Synthetic traffic with business invariants; a failure triggers an automatic rewind and an incident | monitor job report · incident · rewind ledger |
+| **govern** | Reversibility policy, gate verdicts (also as a CI component job), provenance per change, named approvals, verified undo record | [`rewind/policy.yaml`](rewind/policy.yaml) · `rewind-gate` job · ledger · dashboard |
 
 ## Duo Agent Platform features used
 
-- **Flows via API**: plan, develop, review and fix-pipeline steps, started with least-privilege `agent_privileges` per step (from policy). Ambient flows run without per-tool prompts, and Rewind fails a run that stalls waiting for approval. `start_flows` is never granted, because a flow that starts flows would act outside the checkpoint.
+- **Flows via API**: plan, develop, review, fix-pipeline and security-fix steps, started with least-privilege `agent_privileges` per step (from policy). Ambient flows run without per-tool prompts, and Rewind fails a run that stalls waiting for approval. `start_flows` is never granted, because a flow that starts flows would act outside the checkpoint.
 - **Custom flows (Flow Registry v1)**: [`rewind_planner`](flows/rewind_planner.yml), [`rewind_release`](flows/rewind_release.yml) (tighter toolset), [`rewind_explainer`](flows/rewind_explainer.yml) (mention trigger).
 - **Custom agent**: [Rewind explainer](agents/rewind-explainer.md) for Duo Chat.
 - **MCP**: Rewind serves read-only MCP tools at `/mcp/` (`classify_action`, `check_paths`, `rewind_policy`, `get_ledger`, `explain_checkpoint`), so agents can ask *before* they act. See [`.gitlab/duo/mcp.json`](.gitlab/duo/mcp.json).
 - **Agent runtime**: [`.gitlab/duo/agent-config.yml`](.gitlab/duo/agent-config.yml) sets up tests and restricts the sandbox network, so agents can't reach external systems. [`AGENTS.md`](AGENTS.md) carries the rules.
+- **Agent sessions**: every flow's session page is linked from the ledger and dashboard, next to the changes it made.
+
+### Other GitLab features Rewind builds on
+
+Incident Management (incidents opened and resolved by Rewind), Feature Flags (Unleash API, per-environment strategies), Environments and Deployments (rollbacks recorded on the environment page), Releases, the container registry, security scanners, test and coverage reports, CI/CD components, webhooks (issues, MRs, pipelines, jobs, comments), and `id_tokens` for keyless Google Cloud deploys.
 
 ## Setup from a fresh GitLab and Google Cloud account
 
@@ -154,7 +177,9 @@ python scripts/demo.py rewind    # "$15 off every order" → monitor catches neg
 python scripts/demo.py block     # "email a receipt" → external side effect → blocked by the gate
 ```
 
-Watch the ledger fill in on the issue, or open the dashboard at `REWIND_PUBLIC_URL`.
+Watch the ledger fill in on the issue, or open the dashboard at `REWIND_PUBLIC_URL`. The demo app's storefront (its production URL) shows what production charges for sample baskets, live. During the promo bug a $4 tea shows **-$11.00**, and after the rewind it's back to $4.00.
+
+Don't push to `main` while a run is in progress: Rewind will stop the run, because its change set is no longer attributable.
 
 Manual control:
 
@@ -166,6 +191,21 @@ rewind to <checkpoint>               # do it, then verify zero drift
 rewind undo-last                     # undo the rewind
 ```
 
+## Use the gate in any project
+
+The reversibility gate is a [CI/CD component](templates/gate.yml). It reads the job's checkout only, so it needs no token:
+
+```yaml
+include:
+  - component: gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43319182/showcase/gate@main
+    inputs:
+      stage: test                       # default
+      policy: path/to/your-policy.yaml  # optional; default is Rewind's built-in policy
+      fail_on: block                    # or "reroute" to also fail on "undoable if done differently"
+```
+
+On merge request pipelines, the `rewind-gate` job fails when a change contains something that can't be undone. Findings appear in the merge request's test report, with the file, line and evidence. This project uses its own component on every MR pipeline. To list it in the CI/CD Catalog, a Maintainer marks the project as a catalog resource; the pipeline's releases then publish it.
+
 ## What Rewind cannot undo, and how it handles that
 
 Rewind never claims to undo the irreversible. It classifies, gates, and reports.
@@ -175,7 +215,8 @@ Rewind never claims to undo the irreversible. It classifies, gates, and reports.
 - **Merges and history**: a merge can't be un-merged. Rewind restores the tree with a new commit and annotates the MR. History is kept for audit.
 - **Notifications already sent** (release emails, issue notifications) can't be recalled. Releases are classified *compensatable* for this reason.
 - **Deleted issues or MRs**, and objects Rewind had no baseline for, are irreversible: fail closed.
-- **Concurrent human changes**: Rewind refuses to overwrite anything that changed after the plan (*conflict*), and serializes agent runs per project.
+- **Concurrent human changes**: Rewind refuses to overwrite anything that changed after the plan (*conflict*), serializes agent runs per project, and stops a run (instead of reverting your work) if you push to the default branch during it.
+- **Security findings outside the change**: Rewind asks agents to fix only what they introduced, not the existing backlog. Container image findings come from the base image and are reported, not assigned.
 - **Scope**: snapshots cover open issues and MRs plus those updated in the last 30 days (configurable). Large repositories are bounded by GitLab's compare API limits.
 
 ## Development

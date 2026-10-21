@@ -20,6 +20,8 @@ stopped only for what it can't.
   `AGENTS.md` or `CLAUDE.md`. Agents don't change their own guardrails or the pipeline.
 - Add code that calls external services or sends messages (email, SMS, webhooks).
 - Add a migration in `app/migrations/` without a `downgrade()`.
+- Push to the default branch directly. Changes reach `main` only through a merge request that
+  Rewind gated; an agent commit that skips the gate is rewound automatically.
 
 ## Merge requests
 - One merge request per issue, targeting the default branch, with `Closes #<iid>`.

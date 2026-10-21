@@ -24,8 +24,15 @@ Rewind sits outside the agents and makes their work undoable as one unit.
 - **Rewind**: when production monitoring fails, Rewind undoes the change set in mitigation
   order. Traffic and flags come back in seconds, then the code, then the paper trail. It then
   re-snapshots and verifies **zero drift**. Every rewind can itself be undone.
-- **Ledger**: one note on the issue, edited live: lifecycle evidence, the gate verdict, every
-  change by class, every inverse and its outcome.
+- **Ledger**: one note on the issue, edited live: lifecycle evidence, links to every Duo agent
+  session, the gate verdict, every change by class with the session that made it, every inverse and
+  its outcome. A GitLab incident opens when a rewind starts and Rewind resolves it itself.
+- **Humans only where it matters**: anyone on the project can undo a run with a `/rewind` comment.
+  Accepting something irreversible needs Rewind's authenticated API, because agents comment with your
+  identity. The approval is named, reasoned, and bound to one commit.
+- **Guards**: agents fix the security findings they introduced; an agent commit that skips the gate
+  and reaches `main` is rewound; a daily credit guard caps flows.
+- **Reusable**: the gate ships as a GitLab CI/CD component any project can include with one line.
 
 ## How we built it
 - **GitLab Duo Agent Platform**: flows started through the Flows API with least-privilege
