@@ -3,4 +3,4 @@
 # Rewind snapshots the live flags, so a rewind switches them back.
 new_pricing:
   staging: true
-  production: false
+  production: true
