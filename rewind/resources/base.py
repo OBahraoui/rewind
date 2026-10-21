@@ -32,6 +32,16 @@ class Context:
     checkpoint_sha: str = ""
     restore_mode: str = "mr"  # "mr": restore via a merged MR; "direct": commit to the default branch
     sleep: Callable[[float], None] = time.sleep
+    # Objects Rewind created itself (restore branches and MRs, incidents). Tracked by identity, not by
+    # label or name, so an agent can't hide its own changes by dressing them up as Rewind's.
+    own: dict[str, set[str]] = field(default_factory=lambda: {"issue": set(), "merge_request": set(),
+                                                              "branch": set()})
+
+    def is_own(self, kind: str, key: str | int) -> bool:
+        return str(key) in self.own.get(kind, set())
+
+    def register_own(self, kind: str, key: str | int) -> None:
+        self.own.setdefault(kind, set()).add(str(key))
 
     def fingerprint(self, *parts: str) -> str:
         msg = "\x1f".join(parts).encode()

@@ -28,7 +28,9 @@ spec:
       description: Report only, never fail the pipeline.
     rewind_package:
       default: "https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43319182/showcase/-/archive/main/showcase-main.tar.gz"
-      description: Where to install Rewind from (pip requirement or URL).
+      description: >-
+        Where to install Rewind from (pip requirement or URL). "base" installs it from the merge
+        request's base commit, for repositories that contain Rewind itself.
 ---
 rewind-gate:
   stage: $[[ inputs.stage ]]
@@ -39,12 +41,18 @@ rewind-gate:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
   allow_failure: $[[ inputs.allow_failure ]]
   script:
-    - pip install -q "$[[ inputs.rewind_package ]]"
     - git fetch -q origin "$CI_MERGE_REQUEST_DIFF_BASE_SHA" 2>/dev/null || true
+    # Never let the change under review supply the gate's code or rules: both come from the base commit.
+    - |
+      if [ "$[[ inputs.rewind_package ]]" = "base" ]; then
+        git worktree add -q /tmp/rewind-base "$CI_MERGE_REQUEST_DIFF_BASE_SHA" && pip install -q /tmp/rewind-base
+      else
+        pip install -q "$[[ inputs.rewind_package ]]"
+      fi
     - >-
       rewind gate --base "$CI_MERGE_REQUEST_DIFF_BASE_SHA" --head "$CI_COMMIT_SHA"
-      --policy "$[[ inputs.policy ]]" --fail-on "$[[ inputs.fail_on ]]"
-      --report rewind-gate.json --junit rewind-gate.xml
+      --policy "$[[ inputs.policy ]]" --policy-ref "$CI_MERGE_REQUEST_DIFF_BASE_SHA"
+      --fail-on "$[[ inputs.fail_on ]]" --report rewind-gate.json --junit rewind-gate.xml
   artifacts:
     when: always
     paths: [rewind-gate.json]

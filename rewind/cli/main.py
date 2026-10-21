@@ -446,6 +446,8 @@ def approve(run_id: str,
 def gate(base: Annotated[str, typer.Option(help="Base commit (e.g. $CI_MERGE_REQUEST_DIFF_BASE_SHA)")],
          head: Annotated[str, typer.Option(help="Head commit (e.g. $CI_COMMIT_SHA)")],
          policy: Annotated[str, typer.Option(help="Policy file; empty uses Rewind's built-in policy")] = "",
+         policy_ref: Annotated[str, typer.Option(help="Read the policy as of this commit (use the MR base, "
+                                                      "so a change can't relax the rules checking it)")] = "",
          repo: Annotated[Path, typer.Option(help="Path to the git checkout")] = Path("."),
          report: Annotated[Path, typer.Option(help="JSON report path")] = Path("rewind-gate.json"),
          junit: Annotated[Path, typer.Option(help="JUnit report for the MR widget")] = Path("rewind-gate.xml"),
@@ -457,10 +459,20 @@ def gate(base: Annotated[str, typer.Option(help="Base commit (e.g. $CI_MERGE_REQ
     from rewind import gate as gate_mod
     from rewind.localgit import LocalGit
 
-    pol_path = policy if policy and Path(policy).is_file() else None
-    if policy and not pol_path:
-        typer.secho(f"policy {policy} not found; using Rewind's built-in policy", fg="yellow")
-    ctx = Context(gitlab=LocalGit(repo), policy=Policy.load(pol_path), hash_key=b"")
+    git_repo = LocalGit(repo)
+    loaded: Policy | None = None
+    if policy and policy_ref:
+        raw = git_repo.get_file_raw(policy, policy_ref)
+        if raw is not None:
+            loaded = Policy.loads(raw.decode("utf-8"))
+            typer.echo(f"policy: {policy} as of {policy_ref[:8]} (the change under review can't relax it)")
+    elif policy and Path(policy).is_file():
+        loaded = Policy.load(policy)
+    if loaded is None:
+        if policy:
+            typer.secho(f"policy {policy} not found; using Rewind's built-in policy", fg="yellow")
+        loaded = Policy.load()
+    ctx = Context(gitlab=git_repo, policy=loaded, hash_key=b"")
     decision = gate_mod.evaluate(ctx, None, base, head)
     report.write_text(decision.model_dump_json(indent=2), encoding="utf-8")
 

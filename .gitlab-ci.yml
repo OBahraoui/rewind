@@ -40,7 +40,7 @@ include:
     inputs:
       stage: secure
       policy: rewind/policy.yaml
-      rewind_package: "."
+      rewind_package: base
       allow_failure: true
   - template: Jobs/SAST.gitlab-ci.yml
   - template: Jobs/Dependency-Scanning.gitlab-ci.yml

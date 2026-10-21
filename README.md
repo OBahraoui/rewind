@@ -204,7 +204,7 @@ include:
       fail_on: block                    # or "reroute" to also fail on "undoable if done differently"
 ```
 
-On merge request pipelines, the `rewind-gate` job fails when a change contains something that can't be undone. Findings appear in the merge request's test report, with the file, line and evidence. This project uses its own component on every MR pipeline. To list it in the CI/CD Catalog, a Maintainer marks the project as a catalog resource; the pipeline's releases then publish it.
+On merge request pipelines, the `rewind-gate` job fails when a change contains something that can't be undone. Findings appear in the merge request's test report, with the file, line and evidence. The policy is read from the merge request's base commit, so a change can't relax the rules checking it. This project uses its own component on every MR pipeline. To list it in the CI/CD Catalog, a Maintainer marks the project as a catalog resource; the pipeline's releases then publish it.
 
 ## What Rewind cannot undo, and how it handles that
 

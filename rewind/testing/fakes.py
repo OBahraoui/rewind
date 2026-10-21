@@ -615,6 +615,12 @@ class FakeGitLab:
         return self.pipelines.get(pipeline_id)
 
     @locked
+    def cancel_pipeline(self, pipeline_id: int) -> dict:
+        self._record("cancel_pipeline", pipeline_id)
+        self.pipelines[pipeline_id]["status"] = "canceled"
+        return self.pipelines[pipeline_id]
+
+    @locked
     def list_pipeline_jobs(self, pipeline_id: int, **params: Any) -> list[dict]:
         jobs = self.jobs.get(pipeline_id, [])
         scope = params.get("scope")

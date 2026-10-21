@@ -196,6 +196,7 @@ def test_agent_fixes_findings_it_introduced(orch, gl):
     assert run.state is RunState.TESTING and run.gated_sha == sha
     gl.add_pipeline("agent/feature", sha, "success", mr_iid=mr,
                     jobs=[{"id": 502, "name": "semgrep-sast", "stage": "secure", "status": "success"}])
+    gl.artifacts[(502, "gl-sast-report.json")] = json.dumps({"vulnerabilities": []}).encode()
     run = orch.advance(run.id)
     assert run.state is RunState.REVIEWING
     assert any(e.stage == "secure" and e.status == "clean" for e in run.evidence)
@@ -257,3 +258,75 @@ def test_gated_mr_merged_by_a_human_is_adopted(orch, gl):
     gl.merge_merge_request(run.mr_iid)
     run = orch.advance(run.id)
     assert run.state is RunState.RELEASING and run.merge_sha == gl.mrs[run.mr_iid]["merge_commit_sha"]
+
+
+
+# -- review fixes ------------------------------------------------------------------
+def test_scan_without_report_is_incomplete_not_clean(orch, gl):
+    _, _, run = to_mr_pipeline(orch, gl, None)  # scanner job succeeded but left no report
+    assert any(e.stage == "secure" and e.status == "incomplete" for e in run.evidence)
+    assert not any(e.stage == "secure" and e.status == "clean" for e in run.evidence)
+
+
+def test_words_starting_with_rewind_are_not_commands(orch, gl, cr):
+    issue, run = ship(orch, gl, cr)
+    for text in ("/rewinding this would be bad", "/rewind:now", "/rewind-me"):
+        assert orch.command(text=text, author_id=2, author="alice", issue_iid=issue) is None
+    assert orch.repo.get(run.id).state is RunState.SHIPPED
+
+
+def test_rewind_during_release_cancels_the_pipeline_first(orch, gl, cr):
+    issue = gl.add_issue("Promo pricing", labels=["rewind:auto"])
+    run = drive_to_merge(orch, gl, cr, orch.start_run(issue), issue)
+    pid = gl.add_pipeline("main", run.merge_sha, "running", jobs=release_jobs("created"))
+    orch.command(text="/rewind", author_id=2, author="alice", issue_iid=issue)
+    assert gl.pipelines[pid]["status"] == "canceled"
+    assert orch.repo.get(run.id).state is RunState.REWOUND
+
+
+def test_second_rewind_comment_does_not_rewind_again(orch, gl, cr):
+    issue, run = ship(orch, gl, cr)
+    orch.command(text="/rewind", author_id=2, author="alice", issue_iid=issue)
+    first = orch.repo.get(run.id).rewind_id
+    reply = orch.command(text="/rewind", author_id=2, author="bob", issue_iid=issue)
+    assert "already rewound" in reply
+    assert orch.repo.get(run.id).rewind_id == first  # undo-last still targets the real rewind
+
+
+def test_incident_is_never_part_of_the_change_set(orch, gl, cr):
+    issue = gl.add_issue("Promo pricing", labels=["rewind:auto"])
+    run = drive_to_merge(orch, gl, cr, orch.start_run(issue), issue)
+    gl.add_pipeline("main", run.merge_sha, "failed", jobs=release_jobs("failed"))
+    run = orch.advance(run.id)
+    report = orch.engine.get_report(run.rewind_id)
+    assert not any(s.kind == "issue" and s.key == str(run.incident_iid) for s in report.steps)
+    assert "Closed by Rewind" not in "".join(n["body"] for n in gl.issue_notes[run.incident_iid])
+
+
+def test_agent_cannot_hide_issues_behind_rewind_labels(engine, gl):
+    cp = engine.checkpoint()
+    hidden = gl.add_issue("agent-made", labels=["rewind:incident"])
+    change = next(c for c in engine.diff(cp.id).changes if c.kind == "issue")
+    assert change.key == str(hidden) and change.op == "created"
+
+
+def test_approval_covers_only_the_findings_the_human_saw(orch, gl):
+    _issue, run = blocked_run(orch, gl)
+    run = orch.approve(run.id, by="Othmane", reason="receipts provider is idempotent")
+    assert run.state is RunState.TESTING
+    # Same commit, but a new irreversible change appears in project state: the old approval doesn't cover it.
+    gl.update_variable("API_URL", "*", value="changed")
+    run = orch.repo.get(run.id)
+    run.move(RunState.GATING, "re-gate")
+    orch.repo.save(run)
+    run = orch.advance(run.id)
+    assert run.state is RunState.BLOCKED and "CI/CD variable" in run.error
+
+
+def test_mr_merged_outside_rewind_while_fixing_is_rewound(orch, gl):
+    mr, _, run = to_mr_pipeline(orch, gl, "app/pricing.py")
+    assert run.state is RunState.FIXING
+    gl.update_merge_request(mr, title="Promo")
+    gl.merge_merge_request(mr)  # someone merges the known-vulnerable commit
+    run = orch.advance(run.id)
+    assert run.state is RunState.REWOUND and "merged outside Rewind" in run.extra["rewind_reason"]

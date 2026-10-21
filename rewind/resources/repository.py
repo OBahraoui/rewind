@@ -67,6 +67,7 @@ class RepositoryHandler(Handler):
     def _restore_via_mr(self, ctx: Context, branch: str, head: str, title: str, message: str,
                         actions: list[dict]) -> str:
         work = f"rewind/{ctx.rewind_id}"
+        ctx.register_own("branch", work)
         if not ctx.gitlab.get_branch(work):
             ctx.gitlab.create_branch(work, head)
         commit = ctx.gitlab.create_commit(work, message, actions)
@@ -75,6 +76,7 @@ class RepositoryHandler(Handler):
             description=f"Automatic restore by Rewind.\n\nCheckpoint `{ctx.checkpoint_id}` · rewind `{ctx.rewind_id}`",
             labels=["rewind:restore"],
         )
+        ctx.register_own("merge_request", mr["iid"])
         try:
             merged = merge_when_mergeable(ctx, mr["iid"], commit["id"], f"Merge {title}\n\n{REWIND_MARKER}")
         except RuntimeError as exc:
@@ -150,7 +152,7 @@ class BranchHandler(Handler):
         return {
             b["name"]: self._state(b)
             for b in ctx.gitlab.list_branches()
-            if b["name"] != default and not ctx.policy.ignore.branch(b["name"])
+            if b["name"] != default and not ctx.is_own("branch", b["name"])
         }
 
     @staticmethod

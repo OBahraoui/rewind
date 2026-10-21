@@ -27,7 +27,7 @@ from rewind.flows import Flows
 from rewind.http import ApiError
 from rewind.models import ChangeSet, RewindReport, utcnow
 from rewind.resources.repository import REWIND_MARKER
-from rewind.runs import Approval, FlowRun, Run, RunState
+from rewind.runs import Approval, FlowRun, Run, RunState, gate_fingerprints, security_fingerprints
 from rewind.snapshot import diff as diff_snapshots
 from service.repo import RunRepository
 
@@ -70,7 +70,7 @@ LABELS = {
     "blocked": "rewind:blocked", "failed": "rewind:failed",
 }
 
-COMMAND = re.compile(r"^\s*/rewind(?:\s+(?P<verb>[\w-]+))?(?P<rest>.*)$", re.IGNORECASE)
+COMMAND = re.compile(r"^\s*/rewind(?=\s|$)(?:\s+(?P<verb>[\w-]+))?.*$", re.IGNORECASE)
 HELP = """⏪ Rewind commands
 - `/rewind`: undo this run's whole change set (production traffic, flags, code, records) and verify zero drift
 - `/rewind dry-run`: show the exact inverse plan without changing anything
@@ -282,7 +282,7 @@ class Orchestrator:
         self._attribute(run, change_set)
         self.repo.save_change_set(run.id, change_set)
         run.add_evidence("govern", f"Reversibility gate on {mr['sha'][:8]}", decision.verdict)
-        approval = run.approval_for(mr["sha"])
+        approval = run.approval_for(mr["sha"], gate_fingerprints(decision)) if decision.findings else None
         if decision.verdict == "allow" or approval:
             run.gated_sha = mr["sha"]
             self._label(run, add=["rewind:reversible"] if not approval else [], remove=["rewind:needs-human"])
@@ -362,18 +362,25 @@ class Orchestrator:
         if not base:
             return False
         changed = {d["new_path"] for d in self.gitlab.compare(base, run.gated_sha).get("diffs", [])}
-        findings = security.introduced_findings(self.gitlab, pipeline["id"], changed,
-                                                self.policy.security.fix_severities)
+        scan = security.introduced_findings(self.gitlab, pipeline["id"], changed,
+                                            self.policy.security.fix_severities)
+        findings = scan.findings
         run.security_findings = findings
         severities = "/".join(self.policy.security.fix_severities).lower()
+        if scan.unavailable:
+            # Never call a scan clean that didn't produce a report.
+            run.add_evidence("secure", "Security scan incomplete: no report from " + ", ".join(scan.unavailable),
+                             "incomplete", pipeline.get("web_url", ""))
         if not findings:
-            run.add_evidence("secure", f"No new {severities} findings in the {len(changed)} file(s) this change "
-                                       f"touched", "clean", pipeline.get("web_url", ""))
+            if scan.scanned:
+                run.add_evidence("secure", f"No new {severities} findings in the {len(changed)} file(s) this "
+                                           f"change touched ({', '.join(scan.scanned)})", "clean",
+                                 pipeline.get("web_url", ""))
             return False
         described = [security.describe(f) for f in findings]
         run.add_evidence("secure", f"{len(findings)} {severities} finding(s) introduced by this change", "found",
                          pipeline.get("web_url", ""))
-        if run.approval_for(run.gated_sha):
+        if run.approval_for(run.gated_sha, security_fingerprints(findings)):
             run.note(f"{len(findings)} security finding(s) accepted by an approval for {run.gated_sha[:8]}")
             return False
         if run.security_fix_attempts < self.policy.security.max_fix_attempts and self.flows.enabled("develop"):
@@ -483,8 +490,16 @@ class Orchestrator:
             mr = self.gitlab.get_merge_request(run.mr_iid) or {}
             if mr.get("state") == "merged" and run.gated_sha and mr.get("sha") == run.gated_sha:
                 run.merge_sha = mr.get("merge_commit_sha") or mr.get("squash_commit_sha") or head
-                run.move(RunState.RELEASING, f"MR !{run.mr_iid} was merged outside Rewind, but exactly the gated "
-                                             f"commit {run.gated_sha[:8]}; watching the release")
+                if run.state == RunState.FIXING:  # merged while known problems were being fixed
+                    what = STEP_LABEL.get(run.extra.get("fixing_step", "fix"), "a fix")
+                    self._rewind(run, f"MR !{run.mr_iid} was merged outside Rewind while {what} was still "
+                                      f"fixing it (failing checks or security findings)", {"merged_outside": True})
+                    return True
+                if run.state != RunState.REVIEWING:
+                    run.add_evidence("release", f"MR !{run.mr_iid} merged outside Rewind before its checks "
+                                                f"finished", "unverified", run.mr_url)
+                run.move(RunState.RELEASING, f"MR !{run.mr_iid} was merged outside Rewind at the gated commit "
+                                             f"{run.gated_sha[:8]}; watching the release")
                 return True
         commits = [c for c in self.gitlab.compare(expected, head).get("commits", [])
                    if REWIND_MARKER not in (c.get("title") or "") + (c.get("message") or "")]
@@ -541,6 +556,7 @@ class Orchestrator:
             self._open_incident(run, reason)
             self.repo.save(run)
             self._publish(run)
+        self._cancel_release(run)
         report = self.engine.rewind(run.checkpoint_id, reason=reason, trigger={"run": run.id, **(trigger or {})})
         run.rewind_id = report.id
         if report.change_set:
@@ -553,6 +569,19 @@ class Orchestrator:
         run.move(RunState.REWOUND, msg + ("; zero drift" if report.zero_drift else "; drift found"))
         self._resolve_incident(run, report)
 
+    def _cancel_release(self, run: Run) -> None:
+        """A release still running would redeploy what Rewind is about to undo."""
+        if not run.merge_sha:
+            return
+        active = {"created", "waiting_for_resource", "preparing", "pending", "running", "scheduled", "manual"}
+        for p in self.gitlab.list_pipelines(ref=self.default_branch, sha=run.merge_sha):
+            if p["status"] in active:
+                try:
+                    self.gitlab.cancel_pipeline(p["id"])
+                    run.note(f"cancelled release pipeline #{p['id']} before rewinding")
+                except ApiError as exc:
+                    run.note(f"could not cancel pipeline #{p['id']} ({exc.status}); rewinding anyway")
+
     def _open_incident(self, run: Run, reason: str) -> None:
         """GitLab Incident Management: an incident that Rewind resolves itself when verification passes."""
         if run.incident_iid:
@@ -564,6 +593,7 @@ class Orchestrator:
             incident = self.gitlab.create_issue(f"⏪ Rewinding: {run.issue_title}", body, labels=["rewind:incident"],
                                                 issue_type="incident")
             run.incident_iid, run.incident_url = incident["iid"], incident.get("web_url", "")
+            self.engine.register_own("issue", incident["iid"])  # Rewind's record, never part of a change set
             run.note(f"incident #{incident['iid']} opened")
         except Exception:
             log.warning("could not open incident", extra={"run": run.id})
@@ -654,6 +684,8 @@ class Orchestrator:
             if not acquired:
                 return "⏪ Rewind is busy with this run; try again in a minute."
             run = self.repo.get(run.id)
+            if run.state not in (RunState.SHIPPED, RunState.BLOCKED, RunState.FAILED, RunState.RELEASING):
+                return f"⏪ Run `{run.id}` is now {run.state.value}; nothing to do."
             self._rewind(run, f"requested by @{author} in a comment", {"requested_by": author})
             self.repo.save(run)
             self._publish(run)
@@ -678,7 +710,8 @@ class Orchestrator:
             mr = self.gitlab.get_merge_request(run.mr_iid)
             if not mr or mr["state"] != "opened":
                 raise ValueError(f"MR !{run.mr_iid} is not open")
-            run.approvals.append(Approval(by=by, reason=reason.strip(), sha=mr["sha"]))
+            covers = gate_fingerprints(run.gate) | security_fingerprints(run.security_findings)
+            run.approvals.append(Approval(by=by, reason=reason.strip(), sha=mr["sha"], covers=sorted(covers)))
             run.error = None
             self._label(run, add=[LABELS["running"]], remove=[LABELS["blocked"]])
             run.move(RunState.GATING, f"{by} accepted the risk for {mr['sha'][:8]}: {reason.strip()}")

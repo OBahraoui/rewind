@@ -47,12 +47,24 @@ class FlowRun(BaseModel):
 
 
 class Approval(BaseModel):
-    """A human accepting what Rewind can't undo. Bound to one exact commit."""
+    """A human accepting what Rewind can't undo: bound to one commit and to the findings they saw."""
 
     by: str
     reason: str
     sha: str
+    covers: list[str] = Field(default_factory=list)  # finding fingerprints shown when approving
     at: datetime = Field(default_factory=utcnow)
+
+    def accepts(self, sha: str, fingerprints: set[str]) -> bool:
+        return self.sha == sha and fingerprints <= set(self.covers)
+
+
+def gate_fingerprints(gate: Any) -> set[str]:
+    return {f"gate|{f.rule_id}|{f.path}|{f.message}" for f in (gate.findings if gate else [])}
+
+
+def security_fingerprints(findings: list[dict[str, Any]]) -> set[str]:
+    return {f"security|{f.get('file')}|{f.get('line')}|{f.get('name')}" for f in findings}
 
 
 class Evidence(BaseModel):
@@ -115,8 +127,9 @@ class Run(BaseModel):
         self.updated_at = utcnow()
         self.timeline.append(TimelineEvent(state=self.state.value, message=message))
 
-    def approval_for(self, sha: str) -> Approval | None:
-        return next((a for a in reversed(self.approvals) if a.sha == sha), None)
+    def approval_for(self, sha: str, fingerprints: set[str]) -> Approval | None:
+        """The approval that accepts exactly these findings on this commit, if any."""
+        return next((a for a in reversed(self.approvals) if a.accepts(sha, fingerprints)), None)
 
     def current_flow(self, step: str) -> FlowRun | None:
         for f in reversed(self.flows):

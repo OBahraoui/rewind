@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from dataclasses import dataclass, field
 from typing import Any
 
 log = logging.getLogger("rewind.security")
@@ -38,30 +39,44 @@ def _finding(v: dict[str, Any], scanner: str) -> dict[str, Any]:
     }
 
 
+@dataclass
+class ScanResult:
+    findings: list[dict[str, Any]] = field(default_factory=list)
+    scanned: list[str] = field(default_factory=list)  # scanner jobs whose report Rewind read
+    unavailable: list[str] = field(default_factory=list)  # scanner jobs that failed or left no report
+
+
 def introduced_findings(gitlab: Any, pipeline_id: int, changed_paths: set[str],
-                        severities: list[str]) -> list[dict[str, Any]]:
+                        severities: list[str]) -> ScanResult:
     wanted = {s.lower() for s in severities}
     out: dict[tuple, dict[str, Any]] = {}
+    result = ScanResult()
     for job in gitlab.list_pipeline_jobs(pipeline_id):
-        if job.get("status") != "success" or "id" not in job:
+        report_path = next((path for pattern, path in REPORTS if pattern.search(job.get("name", ""))), None)
+        if not report_path:
             continue
-        for pattern, path in REPORTS:
-            if not pattern.search(job["name"]):
-                continue
+        if job.get("status") != "success" or "id" not in job:
+            result.unavailable.append(f"{job.get('name')} ({job.get('status')})")
+            continue
+        for path in [report_path]:
             raw = gitlab.job_artifact(job["id"], path)
             if not raw:
+                result.unavailable.append(job["name"])
                 continue
             try:
                 report = json.loads(raw)
             except ValueError:
                 log.warning("unreadable security report", extra={"job": job["name"]})
+                result.unavailable.append(job["name"])
                 continue
+            result.scanned.append(job["name"])
             for v in report.get("vulnerabilities") or []:
                 f = _finding(v, job["name"])
                 if f["severity"].lower() not in wanted or f["file"] not in changed_paths:
                     continue
                 out[(f["file"], f["line"], f["name"])] = f
-    return sorted(out.values(), key=lambda f: (f["file"], f["line"] or 0))
+    result.findings = sorted(out.values(), key=lambda f: (f["file"], f["line"] or 0))
+    return result
 
 
 def describe(f: dict[str, Any]) -> str:

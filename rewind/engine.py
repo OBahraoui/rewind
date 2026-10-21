@@ -48,6 +48,18 @@ class Rewind:
     def __init__(self, ctx: Context, store: Store, project_id: str):
         self.ctx, self.store, self.project_id = ctx, store, str(project_id)
         self._prefix = f"projects/{_slug(self.project_id)}"
+        saved = self.store.get(f"{self._prefix}/own.json") or {}
+        for kind, keys in saved.items():
+            for key in keys:
+                self.ctx.register_own(kind, key)
+
+    def register_own(self, kind: str, key: str | int) -> None:
+        """Record an object Rewind created (e.g. an incident) so snapshots never count it as a change."""
+        self.ctx.register_own(kind, key)
+        self._save_own()
+
+    def _save_own(self) -> None:
+        self.store.put(f"{self._prefix}/own.json", {k: sorted(v) for k, v in self.ctx.own.items()})
 
     # -- persistence ---------------------------------------------------------
     def _save_snapshot(self, snap: Snapshot) -> None:
@@ -158,6 +170,7 @@ class Rewind:
                     report.mitigated_after_s = round(time.monotonic() - started, 2)
                 self.save_report(report)
 
+            self._save_own()  # restore branches/MRs created during this rewind
             report.verification = self.verify(ctx, before, report.change_set)
             report.finished_at = utcnow()
             self.save_report(report)

@@ -102,3 +102,24 @@ def test_localgit_reads_files_at_refs(repo):
     assert g.get_file_raw("README.md", head) is None
     d = g.compare(base, head)["diffs"][0]
     assert d["deleted_file"] and d["old_path"] == "README.md"
+
+
+def test_unusual_paths_are_read_verbatim(repo):
+    base, head = change(repo, {"app/café notify.py": "import httpx\n"})
+    d = LocalGit(repo).compare(base, head)["diffs"][0]
+    assert d["new_path"] == "app/café notify.py" and "+import httpx" in d["diff"]
+    result, report = run_gate(repo, base, head)
+    assert result.exit_code == 1 and report["findings"][0]["path"] == "app/café notify.py"
+
+
+def test_policy_comes_from_the_base_so_a_change_cant_relax_it(repo):
+    (repo / "rewind").mkdir()
+    (repo / "rewind" / "policy.yaml").write_text((Path(__file__).parents[2] / "rewind" / "policy.yaml").read_text())
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "policy")
+    relaxed = "version: 1\nclassify:\n  - {kind: '*', class: irreversible, reason: x}\ngate: {rules: []}\n"
+    base, head = change(repo, {"rewind/policy.yaml": relaxed, "app/notify.py": "import httpx\n"})
+    result, report = run_gate(repo, base, head, "--policy", str(repo / "rewind" / "policy.yaml"))
+    assert report["verdict"] == "allow"  # trusting the head's file: the change disabled its own check
+    result, report = run_gate(repo, base, head, "--policy", "rewind/policy.yaml", "--policy-ref", base)
+    assert result.exit_code == 1 and {f["rule_id"] for f in report["findings"]} >= {"external-side-effect"}

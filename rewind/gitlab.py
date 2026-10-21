@@ -268,6 +268,9 @@ class GitLabClient:
     def get_pipeline(self, pipeline_id: int) -> dict | None:
         return self._get_or_none(f"{self._p}/pipelines/{pipeline_id}")
 
+    def cancel_pipeline(self, pipeline_id: int) -> dict:
+        return self._api.json("POST", f"{self._p}/pipelines/{pipeline_id}/cancel")
+
     def list_pipeline_jobs(self, pipeline_id: int, **params: Any) -> list[dict]:
         return self._paginate(f"{self._p}/pipelines/{pipeline_id}/jobs", **params)
 

@@ -61,19 +61,13 @@ class PrivilegePolicy(BaseModel):
 
 
 class IgnorePolicy(BaseModel):
+    # Rewind's own status labels (rewind:running, rewind:shipped, ...) are bookkeeping on issues.
+    # Objects Rewind creates (restore branches and MRs, incidents) are tracked by identity instead
+    # (Context.own), because an agent could fake a name or a label.
     label_prefixes: list[str] = Field(default_factory=lambda: ["rewind:"])
-    branch_prefixes: list[str] = Field(default_factory=lambda: ["rewind/"])
-    # Issues Rewind itself creates (incidents) are bookkeeping, not part of a change set.
-    issue_labels: list[str] = Field(default_factory=lambda: ["rewind:incident"])
-
-    def issue(self, labels: list[str]) -> bool:
-        return any(lbl in self.issue_labels for lbl in labels)
 
     def label(self, name: str) -> bool:
         return any(name.startswith(p) for p in self.label_prefixes)
-
-    def branch(self, name: str) -> bool:
-        return any(name.startswith(p) for p in self.branch_prefixes)
 
 
 class SnapshotPolicy(BaseModel):
@@ -116,6 +110,10 @@ class Policy(BaseModel):
         if not last or last.kind != "*" or last.cls is not Reversibility.IRREVERSIBLE:
             raise ValueError("the last classify rule must be {kind: '*', class: irreversible} (fail closed)")
         return rules
+
+    @classmethod
+    def loads(cls, text: str) -> Policy:
+        return cls.model_validate(yaml.safe_load(text))
 
     @classmethod
     def load(cls, path: str | Path | None = None) -> Policy:

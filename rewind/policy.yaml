@@ -12,10 +12,9 @@
 version: 1
 
 ignore:
-  # Rewind's own bookkeeping is never part of an agent's change set.
+  # Rewind's status labels are bookkeeping. Objects Rewind creates (restore branches and MRs,
+  # incidents) are tracked by identity, never by name or label, so agents can't hide changes.
   label_prefixes: ["rewind:"]
-  branch_prefixes: ["rewind/"]
-  issue_labels: ["rewind:incident"]
 
 # How Rewind recognises agent-made commits. Duo flows commit as a group service account,
 # so an agent commit that reaches the default branch without a gated merge is caught.

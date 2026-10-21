@@ -23,8 +23,7 @@ class IssueHandler(Handler):
     def snapshot(self, ctx: Context) -> dict[str, dict[str, Any]]:
         items = {i["iid"]: i for i in ctx.gitlab.list_issues(state="opened")}
         items.update({i["iid"]: i for i in ctx.gitlab.list_issues(state="closed", updated_after=_since(ctx))})
-        return {str(iid): self._state(ctx, i) for iid, i in items.items()
-                if not ctx.policy.ignore.issue(i.get("labels") or [])}
+        return {str(iid): self._state(ctx, i) for iid, i in items.items() if not ctx.is_own("issue", iid)}
 
     def _state(self, ctx: Context, i: dict) -> dict[str, Any]:
         assignees = i.get("assignees") or []
@@ -98,7 +97,7 @@ class MergeRequestHandler(Handler):
         for state in ("merged", "closed"):
             items.update({m["iid"]: m for m in ctx.gitlab.list_merge_requests(state=state, updated_after=_since(ctx))})
         return {str(iid): self._state(ctx, m) for iid, m in items.items()
-                if not ctx.policy.ignore.branch(m.get("source_branch", ""))}
+                if not ctx.is_own("merge_request", iid) and not ctx.is_own("branch", m.get("source_branch", ""))}
 
     def _state(self, ctx: Context, m: dict) -> dict[str, Any]:
         return {
