@@ -64,3 +64,6 @@ tr:last-child td { border-bottom: 0; }
 .timeline li { padding: .3rem 0; border-bottom: 1px dashed var(--line); }
 .timeline time { color: var(--muted); font-family: ui-monospace, monospace; margin-right: .4rem; }
 .legend { margin-top: 1.5rem; color: var(--muted); font-size: .88rem; display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+.live { color: var(--rev); font-size: .85rem; font-weight: 600; }
+.tile .n small { font-size: 1rem; color: var(--muted); font-weight: 600; }
+.by { color: var(--muted); font-size: .82rem; }

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Rewind · {{ project }}{% endblock %}
+{% block head %}{% if stats.active %}<meta http-equiv="refresh" content="10">{% endif %}{% endblock %}
 {% block content %}
 <section class="hero">
   <h1>{{ project }}</h1>
@@ -10,7 +11,9 @@
   <div class="tile ok"><span class="n">{{ stats.shipped }}</span><span class="l">shipped hands-off</span></div>
   <div class="tile rw"><span class="n">{{ stats.rewound }}</span><span class="l">rewound</span></div>
   <div class="tile bl"><span class="n">{{ stats.blocked }}</span><span class="l">blocked by the gate</span></div>
+  <div class="tile"><span class="n">{{ stats.flows_today }}<small>/{{ stats.flow_limit }}</small></span><span class="l">agent flows today (credit guard)</span></div>
 </section>
+{% if stats.active %}<p class="live">● live: refreshing every 10s while a run is active</p>{% endif %}
 <section>
   <h2>Runs</h2>
   {% if not runs %}<p class="muted">No runs yet. Label an issue <code>rewind:auto</code> to start one.</p>{% else %}

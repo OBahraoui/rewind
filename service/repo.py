@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import threading
 
-from rewind.models import ChangeSet
+from rewind.models import ChangeSet, utcnow
 from rewind.runs import Run
 from rewind.store import Store
 
@@ -58,6 +58,19 @@ class RunRepository:
                 if run:
                     out.append(run)
         return out
+
+    def take_flow_budget(self, limit: int) -> bool:
+        """Credit guard: count one flow start against today's limit (UTC). False when it's spent."""
+        key = f"{self.prefix}/budget/{utcnow():%Y-%m-%d}.json"
+        with self._lock:
+            used = int((self.store.get(key) or {}).get("flows_started", 0))
+            if used >= limit:
+                return False
+            self.store.put(key, {"flows_started": used + 1, "limit": limit})
+            return True
+
+    def flows_started_today(self) -> int:
+        return int((self.store.get(f"{self.prefix}/budget/{utcnow():%Y-%m-%d}.json") or {}).get("flows_started", 0))
 
     def save_change_set(self, run_id: str, cs: ChangeSet) -> None:
         self.store.put(f"{self.prefix}/changesets/{run_id}.json", cs.model_dump(mode="json"))

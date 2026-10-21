@@ -99,7 +99,8 @@ class Rewind:
         repo = snap.resources.get("repository", {}).get("default", {})
         serving = {env: s["serving"][0][0] for env, s in snap.resources.get("cloud_run", {}).items()
                    if s.get("serving")}
-        cp = Checkpoint(id=new_id("cp" if kind == "checkpoint" else "pre"), project_id=self.project_id,
+        prefix = {"checkpoint": "cp", "pre-rewind": "pre", "step": "step"}[kind]
+        cp = Checkpoint(id=new_id(prefix), project_id=self.project_id,
                         snapshot_id=snap.id, kind=kind, label=label, run_id=run_id, issue_iid=issue_iid,
                         default_branch=snap.meta.get("default_branch", ""), default_sha=repo.get("sha", ""),
                         serving=serving)

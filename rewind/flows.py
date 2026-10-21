@@ -46,8 +46,9 @@ class Flows:
         return bool(ref and ref.enabled)
 
     def payload(self, step: str, goal: str, *, issue_iid: int | None = None, mr_iid: int | None = None,
-                source_branch: str | None = None) -> dict[str, Any]:
-        ref = self.refs[step]
+                source_branch: str | None = None, using: str | None = None) -> dict[str, Any]:
+        """`using` runs this step with another step's flow (e.g. a security fix with the developer flow)."""
+        ref = self.refs[using or step]
         privileges = self.privilege_ids(self.policy.privileges_for(step))
         body: dict[str, Any] = {
             "project_id": self.project_id,
@@ -74,8 +75,8 @@ class Flows:
     def start(self, step: str, goal: str, **kw: Any) -> FlowRun:
         body = self.payload(step, goal, **kw)
         resp = self.gitlab.start_workflow(body)
-        flow = FlowRun(step=step, ref=str(self.refs[step]), workflow_id=int(resp["id"]),
-                       status=str(resp.get("status", "created")).lower())
+        flow = FlowRun(step=step, ref=str(self.refs[kw.get("using") or step]), workflow_id=int(resp["id"]),
+                       status=str(resp.get("status", "created")).lower(), web_url=resp.get("web_url") or "")
         log.info("flow started", extra={"step": step, "workflow_id": flow.workflow_id, "ref": flow.ref})
         return flow
 

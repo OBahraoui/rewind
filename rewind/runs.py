@@ -42,6 +42,17 @@ class FlowRun(BaseModel):
     started_at: datetime = Field(default_factory=utcnow)
     finished_at: datetime | None = None
     error: str | None = None
+    web_url: str = ""  # the Duo agent session page
+    checkpoint_id: str | None = None  # step checkpoint taken when this flow finished
+
+
+class Approval(BaseModel):
+    """A human accepting what Rewind can't undo. Bound to one exact commit."""
+
+    by: str
+    reason: str
+    sha: str
+    at: datetime = Field(default_factory=utcnow)
 
 
 class Evidence(BaseModel):
@@ -82,6 +93,13 @@ class Run(BaseModel):
     reroutes: int = 0
     fix_attempts: int = 0
     rewind_id: str | None = None
+    incident_iid: int | None = None
+    incident_url: str = ""
+    approvals: list[Approval] = Field(default_factory=list)
+    security_fix_attempts: int = 0
+    security_findings: list[dict[str, Any]] = Field(default_factory=list)
+    # change id -> the flows that made it (step label, session url)
+    provenance: dict[str, list[list[str]]] = Field(default_factory=dict)
     ledger_note_id: int | None = None
     change_counts: dict[str, int] = Field(default_factory=dict)
     timeline: list[TimelineEvent] = Field(default_factory=list)
@@ -96,6 +114,9 @@ class Run(BaseModel):
     def note(self, message: str) -> None:
         self.updated_at = utcnow()
         self.timeline.append(TimelineEvent(state=self.state.value, message=message))
+
+    def approval_for(self, sha: str) -> Approval | None:
+        return next((a for a in reversed(self.approvals) if a.sha == sha), None)
 
     def current_flow(self, step: str) -> FlowRun | None:
         for f in reversed(self.flows):

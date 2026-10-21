@@ -4,10 +4,15 @@
 step, persists, and returns. It is driven by webhooks (fast path) and by a
 periodic tick (safety net), so a missed webhook or a restart never strands a run.
 Runs are serialized per project so every change set is attributable to one run.
+
+Trust is asymmetric: undoing is cheap to authorize (anyone on the project, by a
+`/rewind` comment), accepting the irreversible is not (only through Rewind's
+authenticated API, never a comment, because agents comment with the user's identity).
 """
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import re
 import threading
@@ -15,13 +20,15 @@ from datetime import timedelta
 from typing import Any
 
 from rewind import gate as gate_mod
-from rewind import goals, ledger
+from rewind import goals, ledger, security
 from rewind.config import Settings
 from rewind.engine import Rewind
 from rewind.flows import Flows
 from rewind.http import ApiError
-from rewind.models import RewindReport, utcnow
-from rewind.runs import Run, RunState
+from rewind.models import ChangeSet, RewindReport, utcnow
+from rewind.resources.repository import REWIND_MARKER
+from rewind.runs import Approval, FlowRun, Run, RunState
+from rewind.snapshot import diff as diff_snapshots
 from service.repo import RunRepository
 
 log = logging.getLogger("rewind.orchestrator")
@@ -39,6 +46,10 @@ TIMEOUTS = {
 }
 NEEDS_HUMAN_GRACE = timedelta(minutes=3)
 
+# States in which the default branch must not move except through Rewind's gated merge.
+GUARDED = {RunState.PLANNING, RunState.DEVELOPING, RunState.GATING, RunState.REROUTING, RunState.TESTING,
+           RunState.FIXING, RunState.REVIEWING, RunState.MERGING, RunState.RELEASING}
+
 # Duo's developer flow opens merge requests as drafts, and GitLab refuses to merge a draft.
 DRAFT_PREFIX = re.compile(r"^\s*(\[draft\]|\(draft\)|draft:)\s*", re.IGNORECASE)
 
@@ -47,18 +58,38 @@ STAGE_MAP = {"verify": "verify", "package": "package", "secure": "secure", "test
              "staging": "release", "production": "release", "configure": "configure", "monitor": "monitor",
              "release": "release"}
 
+STEP_LABEL = {"plan": "planner flow", "develop": "developer flow", "review": "code review flow",
+              "fix": "fix-pipeline flow", "secfix": "security-fix flow"}
+# Who made a change that no agent session made.
+UNATTRIBUTED = {"cloud_run": "release pipeline", "feature_flag": "release pipeline (configure)",
+                "release": "release pipeline", "tag": "release pipeline", "repository": "Rewind's gated merge",
+                "issue": "Rewind's gated merge (Closes #)", "branch": "Rewind's gated merge"}
+
 LABELS = {
     "running": "rewind:running", "shipped": "rewind:shipped", "rewound": "rewind:rewound",
     "blocked": "rewind:blocked", "failed": "rewind:failed",
 }
+
+COMMAND = re.compile(r"^\s*/rewind(?:\s+(?P<verb>[\w-]+))?(?P<rest>.*)$", re.IGNORECASE)
+HELP = """⏪ Rewind commands
+- `/rewind`: undo this run's whole change set (production traffic, flags, code, records) and verify zero drift
+- `/rewind dry-run`: show the exact inverse plan without changing anything
+- `/rewind status`: where the run is
+Accepting something Rewind can't undo is never done from a comment (agents comment with your identity):
+use `rewind approve <run> --reason "..."` or the authenticated API."""
 
 
 class Orchestrator:
     def __init__(self, settings: Settings, engine: Rewind, repo: RunRepository, flows: Flows):
         self.settings, self.engine, self.repo, self.flows = settings, engine, repo, flows
         self.gitlab = engine.ctx.gitlab
+        self.policy = engine.ctx.policy
         self._locks: dict[str, threading.Lock] = {}
         self._guard = threading.Lock()
+
+    @property
+    def default_branch(self) -> str:
+        return self.engine.ctx.meta.get("default_branch") or "main"
 
     # -- entry points --------------------------------------------------------
     def start_run(self, issue_iid: int) -> Run | None:
@@ -86,12 +117,21 @@ class Orchestrator:
             except Exception:
                 log.exception("advance failed", extra={"run": run.id})
 
-    def advance(self, run_id: str) -> Run | None:
+    @contextlib.contextmanager
+    def _run_lock(self, run_id: str, blocking: bool = False):
         with self._guard:
             lock = self._locks.setdefault(run_id, threading.Lock())
-        if not lock.acquire(blocking=False):
-            return None  # another trigger is already advancing this run
+        acquired = lock.acquire(blocking=blocking, timeout=60 if blocking else -1)
         try:
+            yield acquired
+        finally:
+            if acquired:
+                lock.release()
+
+    def advance(self, run_id: str) -> Run | None:
+        with self._run_lock(run_id) as acquired:
+            if not acquired:
+                return None  # another trigger is already advancing this run
             run = self.repo.get(run_id)
             if not run or run.state.terminal:
                 return run
@@ -105,8 +145,6 @@ class Orchestrator:
                 if run.state.terminal or run.state == before[0]:
                     break
             return run
-        finally:
-            lock.release()
 
     # -- the state machine ---------------------------------------------------
     def _step(self, run: Run) -> None:
@@ -116,6 +154,8 @@ class Orchestrator:
             self._on_timeout(run)
             return
         try:
+            if self._guard_default_branch(run):
+                return
             handler(run)
         except ApiError as exc:
             log.warning("transient API error; will retry on next tick",
@@ -132,6 +172,18 @@ class Orchestrator:
         else:
             self._fail(run, f"timed out while {run.state.value}")
 
+    def _start_flow(self, run: Run, step: str, goal: str, **kw: Any) -> FlowRun | None:
+        """Start a flow, unless the daily credit guard is spent (then the run stops for a human)."""
+        limit = self.settings.max_flows_per_day
+        if not self.repo.take_flow_budget(limit):
+            self._block(run, f"Credit guard: Rewind already started {limit} flows today "
+                             f"(REWIND_MAX_FLOWS_PER_DAY). Nothing was started; re-label the issue tomorrow "
+                             f"or raise the limit.")
+            return None
+        flow = self.flows.start(step, goal, **kw)
+        run.flows.append(flow)
+        return flow
+
     def _on_queued(self, run: Run) -> None:
         earlier = [r for r in self.repo.active() if r.id != run.id and r.created_at < run.created_at]
         if earlier:
@@ -142,12 +194,14 @@ class Orchestrator:
             cp = self.engine.checkpoint(f"run {run.id} · issue #{run.issue_iid}", run_id=run.id,
                                         issue_iid=run.issue_iid)
         run.checkpoint_id = cp.id
+        run.extra["base_sha"] = cp.default_sha
         serving = ", ".join(f"{env}: {rev}" for env, rev in cp.serving.items()) or "not tracked"
         run.add_evidence("govern", f"Checkpoint {cp.id} (default branch {cp.default_sha[:8]}, {serving})", "recorded")
         if self.flows.enabled("plan"):
-            flow = self.flows.start("plan", goals.plan(run.issue_iid, run.issue_title, cp.id), issue_iid=run.issue_iid)
-            run.flows.append(flow)
-            run.move(RunState.PLANNING, f"checkpoint {cp.id} taken; planner flow #{flow.workflow_id} started")
+            flow = self._start_flow(run, "plan", goals.plan(run.issue_iid, run.issue_title, cp.id),
+                                    issue_iid=run.issue_iid)
+            if flow:
+                run.move(RunState.PLANNING, f"checkpoint {cp.id} taken; planner flow #{flow.workflow_id} started")
         else:
             run.move(RunState.PLANNING, f"checkpoint {cp.id} taken")
 
@@ -158,6 +212,10 @@ class Orchestrator:
         status = self.flows.poll(flow)
         if status in ("done", "failed"):
             flow.finished_at = flow.finished_at or utcnow()
+            if flow.checkpoint_id is None:  # step checkpoint: what this agent session changed, undoable alone
+                label = f"{STEP_LABEL.get(step, step)} #{flow.workflow_id}"
+                flow.checkpoint_id = self.engine.checkpoint(f"after {label}", run_id=run.id, issue_iid=run.issue_iid,
+                                                            kind="step").id
         if status == "needs_human" and utcnow() - flow.started_at > NEEDS_HUMAN_GRACE:
             return "needs_human"
         return "running" if status == "needs_human" else status
@@ -166,18 +224,19 @@ class Orchestrator:
         status = self._flow_status(run, "plan")
         if status == "running":
             return
-        if status == "done" and run.current_flow("plan"):
-            run.add_evidence("plan", f"Plan posted by planner flow #{run.current_flow('plan').workflow_id}",
-                             "done", run.issue_url)
+        plan = run.current_flow("plan")
+        if status == "done" and plan:
+            run.add_evidence("plan", f"Plan posted by planner flow #{plan.workflow_id}", "done",
+                             plan.web_url or run.issue_url)
         elif status != "done":
             run.note(f"planner flow ended with {status}; the plan is advisory, continuing")
         issue = self.gitlab.get_issue(run.issue_iid) or {}
-        flow = self.flows.start("develop", goals.develop(run.issue_iid, run.issue_title, issue.get("description") or "",
-                                                         self.engine.ctx.meta.get("default_branch", "main"),
-                                                         run.checkpoint_id or ""),
+        flow = self._start_flow(run, "develop", goals.develop(run.issue_iid, run.issue_title,
+                                                              issue.get("description") or "", self.default_branch,
+                                                              run.checkpoint_id or ""),
                                 issue_iid=run.issue_iid)
-        run.flows.append(flow)
-        run.move(RunState.DEVELOPING, f"developer flow #{flow.workflow_id} started")
+        if flow:
+            run.move(RunState.DEVELOPING, f"developer flow #{flow.workflow_id} started")
 
     def _find_mr(self, run: Run) -> dict | None:
         flow_start = run.current_flow("develop").started_at.isoformat() if run.current_flow("develop") else ""
@@ -202,9 +261,10 @@ class Orchestrator:
         run.mr_iid, run.mr_url = mr["iid"], mr.get("web_url", "")
         self.gitlab.create_mr_note(mr["iid"], f"⏪ Rewind checkpoint `{run.checkpoint_id}` covers everything this "
                                              f"merge request ships (run `{run.id}`). It will be gated for "
-                                             f"reversibility before merge.")
-        run.add_evidence("create", f"MR !{mr['iid']} opened by developer flow, checkpoint noted", "opened",
-                         run.mr_url)
+                                             f"reversibility before merge. Comment `/rewind help` for commands.")
+        dev = run.current_flow("develop")
+        run.add_evidence("create", f"MR !{mr['iid']} opened by developer flow #{dev.workflow_id if dev else '?'}",
+                         "opened", run.mr_url)
         run.move(RunState.GATING, f"MR !{mr['iid']} opened")
 
     def _on_gating(self, run: Run) -> None:
@@ -212,25 +272,36 @@ class Orchestrator:
         if not mr or mr["state"] != "opened":
             self._fail(run, f"MR !{run.mr_iid} is no longer open")
             return
-        base = (mr.get("diff_refs") or {}).get("base_sha") or self.engine.get_checkpoint(run.checkpoint_id).default_sha
+        base = (mr.get("diff_refs") or {}).get("base_sha") or run.extra.get("base_sha") or \
+            self.engine.get_checkpoint(run.checkpoint_id).default_sha
+        run.extra["mr_base_sha"] = base
         change_set = self.engine.diff(run.checkpoint_id)
         decision = gate_mod.evaluate(self.engine.ctx, change_set, base, mr["sha"])
         run.gate = decision
         run.change_counts = decision.counts
+        self._attribute(run, change_set)
         self.repo.save_change_set(run.id, change_set)
         run.add_evidence("govern", f"Reversibility gate on {mr['sha'][:8]}", decision.verdict)
-        if decision.verdict == "allow":
+        approval = run.approval_for(mr["sha"])
+        if decision.verdict == "allow" or approval:
             run.gated_sha = mr["sha"]
-            self._label(run, add=["rewind:reversible"], remove=["rewind:needs-human"])
-            run.move(RunState.TESTING, f"gate allowed {mr['sha'][:8]}; waiting for the MR pipeline")
-        elif decision.verdict == "reroute" and run.reroutes < self.engine.ctx.policy.gate.max_reroutes:
+            self._label(run, add=["rewind:reversible"] if not approval else [], remove=["rewind:needs-human"])
+            if approval and decision.verdict != "allow":
+                run.add_evidence("govern", f"Human override by {approval.by} on {mr['sha'][:8]}: {approval.reason}",
+                                 "approved")
+                run.move(RunState.TESTING, f"gate said {decision.verdict}; {approval.by} accepted it for "
+                                           f"{mr['sha'][:8]}; waiting for the MR pipeline")
+            else:
+                run.move(RunState.TESTING, f"gate allowed {mr['sha'][:8]}; waiting for the MR pipeline")
+        elif decision.verdict == "reroute" and run.reroutes < self.policy.gate.max_reroutes:
             run.reroutes += 1
-            flow = self.flows.start(
-                "develop", goals.reroute(run.mr_iid, mr["source_branch"], [f.message for f in decision.findings],
-                                         decision.instructions),
+            flow = self._start_flow(
+                run, "develop", goals.reroute(run.mr_iid, mr["source_branch"], [f.message for f in decision.findings],
+                                              decision.instructions),
                 mr_iid=run.mr_iid, source_branch=mr["source_branch"])  # issue_id + mr_id is a GitLab 500
-            run.flows.append(flow)
-            run.move(RunState.REROUTING, f"gate rerouted: {decision.instructions[0] if decision.instructions else ''}")
+            if flow:
+                run.move(RunState.REROUTING,
+                         f"gate rerouted: {decision.instructions[0] if decision.instructions else ''}")
         else:
             self._label(run, add=["rewind:needs-human"], remove=["rewind:reversible"])
             reasons = "; ".join(f.message for f in decision.findings[:3])
@@ -264,10 +335,12 @@ class Orchestrator:
         status = pipeline["status"]
         if status == "success":
             self._pipeline_evidence(run, pipeline, {"verify", "secure", "package"})
+            if self._security_gate(run, mr, pipeline):
+                return
             if self.flows.enabled("review"):
-                flow = self.flows.start("review", goals.review(run.mr_iid), mr_iid=run.mr_iid)
-                run.flows.append(flow)
-                run.move(RunState.REVIEWING, f"MR pipeline green; code review flow #{flow.workflow_id} started")
+                flow = self._start_flow(run, "review", goals.review(run.mr_iid), mr_iid=run.mr_iid)
+                if flow:
+                    run.move(RunState.REVIEWING, f"MR pipeline green; code review flow #{flow.workflow_id} started")
             else:
                 run.move(RunState.MERGING, "MR pipeline green")
         elif status in ("failed", "canceled", "skipped"):
@@ -276,17 +349,54 @@ class Orchestrator:
                 self._block(run, f"MR pipeline still {status} after {run.fix_attempts} fix attempt(s)")
                 return
             run.fix_attempts += 1
-            flow = self.flows.start("fix", goals.fix(run.mr_iid, mr["source_branch"], pipeline.get("web_url", "")),
+            flow = self._start_flow(run, "fix", goals.fix(run.mr_iid, mr["source_branch"],
+                                                          pipeline.get("web_url", "")),
                                     mr_iid=run.mr_iid, source_branch=mr["source_branch"])
-            run.flows.append(flow)
-            run.move(RunState.FIXING, f"MR pipeline {status}; fix-pipeline flow #{flow.workflow_id} started")
+            if flow:
+                run.extra["fixing_step"] = "fix"
+                run.move(RunState.FIXING, f"MR pipeline {status}; fix-pipeline flow #{flow.workflow_id} started")
+
+    def _security_gate(self, run: Run, mr: dict, pipeline: dict) -> bool:
+        """Findings this change introduced go back to an agent to fix; True if the run moved."""
+        base = run.extra.get("mr_base_sha") or run.extra.get("base_sha")
+        if not base:
+            return False
+        changed = {d["new_path"] for d in self.gitlab.compare(base, run.gated_sha).get("diffs", [])}
+        findings = security.introduced_findings(self.gitlab, pipeline["id"], changed,
+                                                self.policy.security.fix_severities)
+        run.security_findings = findings
+        severities = "/".join(self.policy.security.fix_severities).lower()
+        if not findings:
+            run.add_evidence("secure", f"No new {severities} findings in the {len(changed)} file(s) this change "
+                                       f"touched", "clean", pipeline.get("web_url", ""))
+            return False
+        described = [security.describe(f) for f in findings]
+        run.add_evidence("secure", f"{len(findings)} {severities} finding(s) introduced by this change", "found",
+                         pipeline.get("web_url", ""))
+        if run.approval_for(run.gated_sha):
+            run.note(f"{len(findings)} security finding(s) accepted by an approval for {run.gated_sha[:8]}")
+            return False
+        if run.security_fix_attempts < self.policy.security.max_fix_attempts and self.flows.enabled("develop"):
+            run.security_fix_attempts += 1
+            flow = self._start_flow(run, "secfix", goals.security_fix(run.mr_iid, mr["source_branch"], described),
+                                    mr_iid=run.mr_iid, source_branch=mr["source_branch"], using="develop")
+            if flow:
+                run.extra["fixing_step"] = "secfix"
+                run.move(RunState.FIXING, f"{len(findings)} security finding(s) introduced; security-fix flow "
+                                          f"#{flow.workflow_id} started")
+            return True
+        self._label(run, add=["rewind:needs-human"])
+        self._block(run, f"{len(findings)} security finding(s) introduced by this change remain after "
+                         f"{run.security_fix_attempts} agent fix attempt(s): " + "; ".join(described[:3]))
+        return True
 
     def _on_fixing(self, run: Run) -> None:
-        status = self._flow_status(run, "fix")
+        step = run.extra.get("fixing_step", "fix")
+        status = self._flow_status(run, step)
         if status == "running":
             return
         if status != "done":
-            self._block(run, f"fix-pipeline flow ended with {status}")
+            self._block(run, f"{STEP_LABEL.get(step, step)} ended with {status}")
             return
         run.move(RunState.GATING, "fix pushed; any new commit is gated again")
 
@@ -295,7 +405,8 @@ class Orchestrator:
         if status == "running":
             return
         flow = run.current_flow("review")
-        run.add_evidence("verify", f"Duo code review flow #{flow.workflow_id if flow else '?'}", status, run.mr_url)
+        run.add_evidence("verify", f"Duo code review flow #{flow.workflow_id if flow else '?'}", status,
+                         (flow.web_url if flow else "") or run.mr_url)
         run.move(RunState.MERGING, "code review finished")
 
     def _on_merging(self, run: Run) -> None:
@@ -327,8 +438,7 @@ class Orchestrator:
         run.move(RunState.RELEASING, f"merged gated commit {run.gated_sha[:8]} as {run.merge_sha[:8]}")
 
     def _on_releasing(self, run: Run) -> None:
-        default = self.engine.ctx.meta.get("default_branch", "main")
-        pipelines = self.gitlab.list_pipelines(ref=default, sha=run.merge_sha)
+        pipelines = self.gitlab.list_pipelines(ref=self.default_branch, sha=run.merge_sha)
         if not pipelines:
             return
         pipeline = pipelines[0]
@@ -340,6 +450,7 @@ class Orchestrator:
             self._pipeline_evidence(run, pipeline)
             change_set = self.engine.diff(run.checkpoint_id)
             run.change_counts = {r.value: len(v) for r, v in change_set.by_class().items()}
+            self._attribute(run, change_set)
             self.repo.save_change_set(run.id, change_set)
             self._label(run, add=[LABELS["shipped"]], remove=[LABELS["running"]])
             run.move(RunState.SHIPPED, "release pipeline green: staging, production and monitoring passed")
@@ -352,21 +463,131 @@ class Orchestrator:
     def _on_rewinding(self, run: Run) -> None:
         self._rewind(run, run.extra.get("rewind_reason", "resuming an interrupted rewind"))
 
+    # -- the default-branch guard --------------------------------------------
+    def _guard_default_branch(self, run: Run) -> bool:
+        """Catch commits that reach the default branch without passing Rewind's gate.
+
+        Before merge the branch must stay at the checkpoint; while releasing, at the gated
+        merge. An agent-made commit that appears anyway bypassed the gate, so the run is
+        rewound. A human's commit makes the change set unattributable, so the run stops.
+        """
+        if run.state not in GUARDED or run.state == RunState.MERGING:
+            return False
+        expected = run.merge_sha if run.state == RunState.RELEASING else run.extra.get("base_sha")
+        if not expected:
+            return False
+        head = ((self.gitlab.get_branch(self.default_branch) or {}).get("commit") or {}).get("id")
+        if not head or head == expected:
+            return False
+        if run.state != RunState.RELEASING and run.mr_iid:
+            mr = self.gitlab.get_merge_request(run.mr_iid) or {}
+            if mr.get("state") == "merged" and run.gated_sha and mr.get("sha") == run.gated_sha:
+                run.merge_sha = mr.get("merge_commit_sha") or mr.get("squash_commit_sha") or head
+                run.move(RunState.RELEASING, f"MR !{run.mr_iid} was merged outside Rewind, but exactly the gated "
+                                             f"commit {run.gated_sha[:8]}; watching the release")
+                return True
+        commits = [c for c in self.gitlab.compare(expected, head).get("commits", [])
+                   if REWIND_MARKER not in (c.get("title") or "") + (c.get("message") or "")]
+        gated: set[str] = set()
+        if run.gated_sha and run.state != RunState.RELEASING:
+            gated = {c["id"] for c in self.gitlab.compare(expected, run.gated_sha).get("commits", [])}
+        ungated = [c for c in commits if c["id"] not in gated]
+        if not ungated:
+            return False
+        agent = [c for c in ungated if self.policy.agents.is_agent_commit(c)]
+        if agent:
+            first = agent[0]
+            self._rewind(run, f"agent commit {first['id'][:8]} (\"{first.get('title', '')}\") reached "
+                              f"{self.default_branch} without passing the reversibility gate",
+                         {"ungated_commits": [c["id"] for c in agent]})
+            return True
+        authors = ", ".join(sorted({c.get("author_name") or "unknown" for c in ungated}))
+        if run.state == RunState.RELEASING:
+            if not run.extra.get("noted_foreign_commits"):
+                run.extra["noted_foreign_commits"] = True
+                run.note(f"{self.default_branch} moved during the release (commits by {authors}); still watching "
+                         f"the release of {run.merge_sha[:8]}")
+            return False
+        self._block(run, f"{self.default_branch} changed outside this run (commits by {authors}), so its change "
+                         f"set is no longer attributable to one run. Rewind stopped instead of guessing.")
+        return True
+
+    # -- provenance ------------------------------------------------------------
+    def _attribute(self, run: Run, change_set: ChangeSet) -> None:
+        """Link every change to the agent session that made it, using the step checkpoints."""
+        try:
+            prev = self.engine.load_snapshot(self.engine.get_checkpoint(run.checkpoint_id).snapshot_id)
+            seen: dict[str, list[list[str]]] = {}
+            for flow in run.flows:
+                if not flow.checkpoint_id:
+                    continue
+                snap = self.engine.load_snapshot(self.engine.get_checkpoint(flow.checkpoint_id).snapshot_id)
+                label = f"{STEP_LABEL.get(flow.step, flow.step)} #{flow.workflow_id}"
+                for c in diff_snapshots(prev, snap, self.policy).changes:
+                    entry = [label, flow.web_url]
+                    if entry not in seen.setdefault(c.id, []):
+                        seen[c.id].append(entry)
+                prev = snap
+            run.provenance = {c.id: seen.get(c.id) or [[UNATTRIBUTED.get(c.kind, "outside agent sessions"), ""]]
+                              for c in change_set.changes}
+        except Exception:
+            log.exception("provenance failed", extra={"run": run.id})
+
     # -- outcomes ------------------------------------------------------------
     def _rewind(self, run: Run, reason: str, trigger: dict[str, Any] | None = None) -> None:
         if run.state != RunState.REWINDING:
             run.extra["rewind_reason"] = reason
             run.move(RunState.REWINDING, reason)
+            self._open_incident(run, reason)
             self.repo.save(run)
             self._publish(run)
         report = self.engine.rewind(run.checkpoint_id, reason=reason, trigger={"run": run.id, **(trigger or {})})
         run.rewind_id = report.id
+        if report.change_set:
+            self._attribute(run, report.change_set)
         run.add_evidence("monitor", f"Rewind {report.id}", "zero drift" if report.zero_drift else "drift")
-        self._label(run, add=[LABELS["rewound"]], remove=[LABELS["running"]])
+        self._label(run, add=[LABELS["rewound"]], remove=[LABELS["running"], LABELS["shipped"], LABELS["blocked"]])
         msg = f"rewound to {run.checkpoint_id}"
         if report.mitigated_after_s is not None:
             msg += f"; production mitigated in {report.mitigated_after_s:.1f}s"
         run.move(RunState.REWOUND, msg + ("; zero drift" if report.zero_drift else "; drift found"))
+        self._resolve_incident(run, report)
+
+    def _open_incident(self, run: Run, reason: str) -> None:
+        """GitLab Incident Management: an incident that Rewind resolves itself when verification passes."""
+        if run.incident_iid:
+            return
+        try:
+            body = (f"**{reason}**\n\nRun `{run.id}` for #{run.issue_iid} ({run.issue_title}).\n\n"
+                    f"Rewind is restoring checkpoint `{run.checkpoint_id}` now: production traffic and flags first, "
+                    f"then code, then records. Verification results will be posted here.")
+            incident = self.gitlab.create_issue(f"⏪ Rewinding: {run.issue_title}", body, labels=["rewind:incident"],
+                                                issue_type="incident")
+            run.incident_iid, run.incident_url = incident["iid"], incident.get("web_url", "")
+            run.note(f"incident #{incident['iid']} opened")
+        except Exception:
+            log.warning("could not open incident", extra={"run": run.id})
+
+    def _resolve_incident(self, run: Run, report: RewindReport) -> None:
+        if not run.incident_iid:
+            return
+        total = (report.finished_at - report.started_at).total_seconds() if report.finished_at else 0
+        lines = [f"⏪ Rewind `{report.id}` finished in {total:.1f}s."]
+        if report.mitigated_after_s is not None:
+            lines.append(f"Production mitigated (traffic and flags back) after **{report.mitigated_after_s:.1f}s**.")
+        try:
+            if report.zero_drift:
+                lines.append("Verification: **zero drift** against the checkpoint. Resolving this incident.")
+                self.gitlab.create_issue_note(run.incident_iid, "\n\n".join(lines))
+                self.gitlab.update_issue(run.incident_iid, state_event="close")
+            else:
+                drift = report.verification.drift if report.verification else []
+                lines.append("Verification found drift, so this stays open for a human:\n" +
+                             "\n".join(f"- {d}" for d in drift))
+                self.gitlab.create_issue_note(run.incident_iid, "\n\n".join(lines))
+                self.gitlab.update_issue(run.incident_iid, add_labels="rewind:needs-human")
+        except Exception:
+            log.warning("could not update incident", extra={"run": run.id})
 
     def _block(self, run: Run, reason: str) -> None:
         run.error = reason
@@ -378,6 +599,96 @@ class Orchestrator:
         self._label(run, add=[LABELS["failed"]], remove=[LABELS["running"]])
         run.move(RunState.FAILED, reason)
 
+    # -- humans: comment commands and approvals --------------------------------
+    def command(self, *, text: str, author_id: int, author: str, issue_iid: int | None = None,
+                mr_iid: int | None = None) -> str | None:
+        """Handle a `/rewind ...` comment. Returns the reply posted, or None if it wasn't a command."""
+        m = COMMAND.match(text.splitlines()[0] if text else "")
+        if not m:
+            return None
+        verb = (m.group("verb") or "").lower()
+        runs = self.repo.find(mr_iid=mr_iid) if mr_iid else ([self.repo.latest_for_issue(issue_iid)]
+                                                             if issue_iid else [])
+        run = next((r for r in runs if r), None)
+        reply = self._command_reply(run, verb, author_id, author)
+
+        def post(body: str) -> None:
+            if mr_iid:
+                self.gitlab.create_mr_note(mr_iid, body)
+            elif issue_iid:
+                self.gitlab.create_issue_note(issue_iid, body)
+
+        post(reply)
+        return reply
+
+    def _command_reply(self, run: Run | None, verb: str, author_id: int, author: str) -> str:
+        if verb in ("help", "?"):
+            return HELP
+        member = self.gitlab.project_member(author_id) or {}
+        if int(member.get("access_level") or 0) < 30:
+            return f"⏪ @{author}, only project members with the Developer role or higher can use Rewind commands."
+        if run is None:
+            return "⏪ There is no Rewind run for this issue or merge request."
+        if verb == "approve":
+            return (f"⏪ Accepting something Rewind can't undo is never done from a comment: agents comment with your "
+                    f"identity, so a comment can't prove a human decided. Run\n\n"
+                    f"`rewind approve {run.id} --reason \"...\"`\n\nwith your Rewind API token. The approval is bound "
+                    f"to the exact commit you approve.")
+        if verb == "status":
+            link = f" · [dashboard]({self.settings.public_url}/runs/{run.id})" if self.settings.public_url else ""
+            return f"⏪ Run `{run.id}`: **{ledger.STATUS[run.state]}**{link}"
+        if verb in ("dry-run", "plan"):
+            plan = self.engine.plan(run.checkpoint_id)
+            head = f"⏪ Dry run for checkpoint `{run.checkpoint_id}` (nothing changed):"
+            return "\n".join([head, "", *ledger.render_report(plan)])
+        if verb:
+            return f"⏪ Unknown command `/rewind {verb}`.\n\n{HELP}"
+        if run.state == RunState.REWOUND:
+            return f"⏪ Run `{run.id}` is already rewound. To put it back: `rewind undo-last`."
+        if not run.checkpoint_id:
+            return f"⏪ Run `{run.id}` never took a checkpoint, so there is nothing to rewind."
+        if run.state not in (RunState.SHIPPED, RunState.BLOCKED, RunState.FAILED, RunState.RELEASING):
+            return (f"⏪ Run `{run.id}` is still {run.state.value}; agents may be mid-change. Rewind undoes it "
+                    f"automatically if the release regresses, or comment `/rewind` again once it has finished.")
+        with self._run_lock(run.id, blocking=True) as acquired:
+            if not acquired:
+                return "⏪ Rewind is busy with this run; try again in a minute."
+            run = self.repo.get(run.id)
+            self._rewind(run, f"requested by @{author} in a comment", {"requested_by": author})
+            self.repo.save(run)
+            self._publish(run)
+        report = self.engine.get_report(run.rewind_id)
+        verdict = "zero drift ✅" if report.zero_drift else "drift found ⚠️ (see the ledger)"
+        mitigated = f" Production mitigated in {report.mitigated_after_s:.1f}s." if report.mitigated_after_s else ""
+        return (f"⏪ Rewound run `{run.id}` to checkpoint `{run.checkpoint_id}` as requested by @{author}."
+                f"{mitigated} Verification: {verdict}. Undo with `rewind undo-last`.")
+
+    def approve(self, run_id: str, *, by: str, reason: str) -> Run:
+        """A human accepts what the gate could not allow, for the MR's current head only."""
+        if not reason.strip():
+            raise ValueError("an approval needs a reason")
+        with self._run_lock(run_id, blocking=True) as acquired:
+            if not acquired:
+                raise RuntimeError("run is busy; try again")
+            run = self.repo.get(run_id)
+            if run is None:
+                raise LookupError(run_id)
+            if run.state != RunState.BLOCKED or not run.mr_iid:
+                raise ValueError(f"run is {run.state.value}; only a blocked run with a merge request can be approved")
+            mr = self.gitlab.get_merge_request(run.mr_iid)
+            if not mr or mr["state"] != "opened":
+                raise ValueError(f"MR !{run.mr_iid} is not open")
+            run.approvals.append(Approval(by=by, reason=reason.strip(), sha=mr["sha"]))
+            run.error = None
+            self._label(run, add=[LABELS["running"]], remove=[LABELS["blocked"]])
+            run.move(RunState.GATING, f"{by} accepted the risk for {mr['sha'][:8]}: {reason.strip()}")
+            self.gitlab.create_mr_note(run.mr_iid, f"⏪ **{by}** accepted what Rewind can't undo in this change, for "
+                                                   f"commit `{mr['sha'][:8]}` only: {reason.strip()}")
+            self.repo.save(run)
+            self._publish(run)
+        self.advance(run_id)
+        return self.repo.get(run_id)
+
     # -- side channels -------------------------------------------------------
     def _label(self, run: Run, add: list[str] = (), remove: list[str] = ()) -> None:
         fields = {}
@@ -385,6 +696,8 @@ class Orchestrator:
             fields["add_labels"] = ",".join(add)
         if remove:
             fields["remove_labels"] = ",".join(remove)
+        if not fields:
+            return
         try:
             self.gitlab.update_issue(run.issue_iid, **fields)
         except Exception:
@@ -400,7 +713,7 @@ class Orchestrator:
                 report = None
         change_set = self.repo.change_set(run.id)
         if report and report.change_set:
-            change_set = None  # the rewind report already lists every change
+            change_set = report.change_set
         body = ledger.render(run, change_set=change_set, report=report, dashboard_url=self.settings.public_url)
         try:
             if run.ledger_note_id is None:

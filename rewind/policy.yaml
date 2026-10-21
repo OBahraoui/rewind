@@ -15,6 +15,18 @@ ignore:
   # Rewind's own bookkeeping is never part of an agent's change set.
   label_prefixes: ["rewind:"]
   branch_prefixes: ["rewind/"]
+  issue_labels: ["rewind:incident"]
+
+# How Rewind recognises agent-made commits. Duo flows commit as a group service account,
+# so an agent commit that reaches the default branch without a gated merge is caught.
+agents:
+  commit_author_emails: ['^service_account_.*@noreply\.gitlab\.com$']
+  commit_author_names: ['^Duo ']
+
+# Security findings an agent introduced must be fixed (by the agent) before merge.
+security:
+  fix_severities: [Critical, High]
+  max_fix_attempts: 1
 
 snapshot:
   # Issues and MRs: every open one, plus closed ones updated in this window.
@@ -91,6 +103,7 @@ agent_privileges:
     develop: [read_write_files, read_only_gitlab, read_write_gitlab, use_git, run_commands]
     review: [read_only_files, read_only_gitlab, read_write_gitlab]
     fix: [read_write_files, read_only_gitlab, read_write_gitlab, use_git, run_commands]
+    secfix: [read_write_files, read_only_gitlab, read_write_gitlab, use_git, run_commands]
 
 # The reversibility gate runs on the MR before merge: the last point where nothing has shipped.
 gate:

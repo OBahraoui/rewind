@@ -69,15 +69,19 @@ class FakeGitLab:
                       "alice": {"id": 2, "username": "alice", "name": "Alice"}}
         self.calls: list[tuple[str, tuple, dict]] = []
         self.fail_next: dict[str, Exception] = {}
+        self.artifacts: dict[tuple[int, str], bytes] = {}
+        self.members: dict[int, int] = {1: 50, 2: 30}  # user id -> access level
 
     # -- internals -----------------------------------------------------------
     def _record(self, name: str, *args, **kw) -> None:
         """Log a write, so tests can assert what Rewind changed."""
         self.calls.append((name, args, kw))
 
-    def _new_commit(self, tree: dict, parents: list[str], title: str) -> str:
+    def _new_commit(self, tree: dict, parents: list[str], title: str,
+                    author: tuple[str, str] = ("Othmane Bahraoui", "othmane@example.com")) -> str:
         sha = hashlib.sha1(f"{next(self._seq)}{title}".encode()).hexdigest()  # noqa: S324
-        self.commits[sha] = {"tree": tree, "parents": parents, "title": title, "created_at": now()}
+        self.commits[sha] = {"tree": tree, "parents": parents, "title": title, "created_at": now(),
+                             "author_name": author[0], "author_email": author[1]}
         return sha
 
     def _resolve(self, ref: str) -> str:
@@ -161,7 +165,12 @@ class FakeGitLab:
             diffs.append({"old_path": path, "new_path": path, "new_file": old is None, "deleted_file": new is None,
                           "renamed_file": False, "a_mode": old[1] if old else "0", "b_mode": new[1] if new else "0",
                           "diff": text})
-        return {"diffs": diffs, "commits": [], "compare_timeout": False}
+        frm, to = self._resolve(from_ref), self._resolve(to_ref)
+        reachable_from = set(self._ancestors(frm))
+        commits = [{"id": c, "title": self.commits[c]["title"], "author_name": self.commits[c]["author_name"],
+                    "author_email": self.commits[c]["author_email"]}
+                   for c in reversed(self._ancestors(to)) if c not in reachable_from]
+        return {"diffs": diffs, "commits": commits, "compare_timeout": False}
 
     @locked
     def get_file_raw(self, path: str, ref: str) -> bytes | None:
@@ -169,7 +178,8 @@ class FakeGitLab:
         return entry[0] if entry else None
 
     @locked
-    def create_commit(self, branch: str, message: str, actions: list[dict], start_sha: str | None = None) -> dict:
+    def create_commit(self, branch: str, message: str, actions: list[dict], start_sha: str | None = None,
+                      author: tuple[str, str] | None = None) -> dict:
         self._record("create_commit", branch, message)
         base = start_sha or self.branches[branch]["sha"]
         tree = dict(self.commits[base]["tree"])
@@ -193,11 +203,12 @@ class FakeGitLab:
                 tree[path] = (tree[path][0], "100755" if act["execute_filemode"] else "100644")
             elif kind == "move":
                 tree[path] = tree.pop(act["previous_path"])
-        sha = self._new_commit(tree, [base], message.splitlines()[0])
+        sha = self._new_commit(tree, [base], message.splitlines()[0], *([author] if author else []))
         self.branches.setdefault(branch, {"sha": sha, "protected": False})["sha"] = sha
         return {"id": sha, "title": message.splitlines()[0]}
 
-    def commit_files(self, branch: str, files: dict[str, str | None], message: str = "change") -> str:
+    def commit_files(self, branch: str, files: dict[str, str | None], message: str = "change",
+                     author: tuple[str, str] | None = None) -> str:
         """Test helper: write {path: content} (None deletes) on a branch, creating it from main."""
         if branch not in self.branches:
             self.create_branch(branch, self.default_branch)
@@ -208,7 +219,7 @@ class FakeGitLab:
                 actions.append({"action": "delete", "file_path": p})
             else:
                 actions.append({"action": "update" if p in tree else "create", "file_path": p, "content": c})
-        return self.create_commit(branch, message, actions)["id"]
+        return self.create_commit(branch, message, actions, author=author)["id"]
 
     @locked
     def get_commit(self, sha: str) -> dict | None:
@@ -381,14 +392,21 @@ class FakeGitLab:
         return {**i, "iid": iid, "assignees": [self.users[u] for u in i["assignees"]],
                 "web_url": f"https://gitlab.example/acme/shop/-/issues/{iid}"}
 
+    @locked
+    def create_issue(self, title: str, description: str = "", labels: list[str] | None = None,
+                     issue_type: str | None = None) -> dict:
+        self._record("create_issue", title)
+        iid = self.add_issue(title, description, labels, issue_type=issue_type or "issue")
+        return self._issue_json(iid)
+
     def add_issue(self, title: str, description: str = "", labels: list[str] | None = None,
-                  created_at: str | None = None) -> int:
+                  created_at: str | None = None, issue_type: str = "issue") -> int:
         """Test helper (also what an agent's create_issue tool would do)."""
         with _lock:
             iid = next(self._iid["issue"])
             self.issues[iid] = {"title": title, "description": description, "state": "opened",
                                 "labels": labels or [], "assignees": [], "confidential": False,
-                                "created_at": created_at or now(), "updated_at": now()}
+                                "issue_type": issue_type, "created_at": created_at or now(), "updated_at": now()}
             self.issue_notes[iid] = []
             return iid
 
@@ -603,6 +621,15 @@ class FakeGitLab:
         return [j for j in jobs if not scope or j["status"] == scope]
 
     @locked
+    def job_artifact(self, job_id: int, path: str) -> bytes | None:
+        return self.artifacts.get((job_id, path))
+
+    @locked
+    def project_member(self, user_id: int) -> dict | None:
+        level = self.members.get(user_id)
+        return {"id": user_id, "access_level": level} if level else None
+
+    @locked
     def create_deployment(self, environment: str, sha: str, ref: str, status: str = "success") -> dict:
         self._record("create_deployment", environment, sha)
         d = {"id": next(self._seq), "environment": environment, "sha": sha, "ref": ref, "status": status}
@@ -640,7 +667,8 @@ class FakeGitLab:
         self._record("start_workflow", **payload)
         wid = next(self._seq)
         self.workflows[wid] = {"id": wid, "status": "running", "payload": payload}
-        return {"id": wid, "status": "created"}
+        return {"id": wid, "status": "created",
+                "web_url": f"https://gitlab.example/acme/shop/-/automate/agent-sessions/{wid}"}
 
     @locked
     def workflow_status(self, workflow_id: int | str) -> dict:

@@ -59,3 +59,14 @@ never delete or skip a test to make it pass.
 def review(mr_iid: int) -> str:
     """The code_review flow rejects any goal that isn't the merge request IID (or URL)."""
     return str(mr_iid)
+
+
+def security_fix(mr_iid: int, branch: str, findings: list[str]) -> str:
+    found = "\n".join(f"- {f}" for f in findings)
+    return f"""Security scanning found issues introduced by merge request !{mr_iid}:
+{found}
+
+Fix each one on branch {branch} (push to the same branch, do not open a new merge request). Fix the code,
+don't suppress the finding, and add a test where it makes sense.
+
+{RULES}"""

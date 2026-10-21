@@ -304,7 +304,7 @@ def bootstrap(webhook: Annotated[bool, typer.Option(help="Register the project w
             url = f"{s.public_url}/webhooks/gitlab"
             payload = {"url": url, "token": s.webhook_secret, "issues_events": True,
                        "merge_requests_events": True, "pipeline_events": True, "job_events": True,
-                       "push_events": False, "enable_ssl_verification": True}
+                       "note_events": True, "push_events": False, "enable_ssl_verification": True}
             hook = next((h for h in gl.list_hooks() if h["url"] == url), None)
             if hook:
                 gl.update_hook(hook["id"], payload)
@@ -417,6 +417,28 @@ def spike(trigger: Annotated[bool, typer.Option(help="Actually start a flow (use
     body += ["", "Agent privileges available:", "", f"`{privs}`" if privs else "unknown", ""]
     out.write_text("\n".join(body) + "\n", encoding="utf-8")
     typer.secho(f"\nWrote {out}", bold=True)
+
+
+@app.command()
+def approve(run_id: str,
+            reason: Annotated[str, typer.Option(help="Why a human accepts what Rewind can't undo")],
+            by: Annotated[str, typer.Option(help="Your name, recorded in the ledger")] = os.environ.get("USER", "")
+            ) -> None:
+    """Accept a blocked run's irreversible change, for the MR's current commit only.
+
+    Deliberately not a comment command: agents comment with your identity.
+    """
+    import httpx
+
+    s = _settings()
+    s.require("public_url", "api_token")
+    resp = httpx.post(f"{s.public_url}/api/runs/{run_id}/approve", json={"by": by, "reason": reason},
+                      headers={"Authorization": f"Bearer {s.api_token}"}, timeout=120)
+    if resp.status_code >= 400:
+        typer.secho(f"✗ {resp.status_code}: {resp.json().get('detail', resp.text)}", fg="red")
+        raise typer.Exit(1)
+    body = resp.json()
+    typer.secho(f"✓ {by} approved run {body['run']}; it is now {body['state']}", fg="green", bold=True)
 
 
 @app.command()

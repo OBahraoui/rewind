@@ -1,11 +1,13 @@
 {% extends "base.html" %}
 {% block title %}Rewind · run {{ run.id }}{% endblock %}
+{% block head %}{% if not run.state.terminal %}<meta http-equiv="refresh" content="5">{% endif %}{% endblock %}
 {% block content %}
 <p><a href="/">← all runs</a></p>
 <section class="hero">
   <h1><a href="{{ run.issue_url }}">#{{ run.issue_iid }}</a> {{ run.issue_title }}</h1>
   <p class="state big s-{{ run.state.value }}">{{ status }}</p>
   {% if run.error %}<p class="error">{{ run.error }}</p>{% endif %}
+  {% if not run.state.terminal %}<p class="live">● live: refreshing every 5s</p>{% endif %}
 </section>
 <section class="facts">
   <div><span class="l">Run</span><code>{{ run.id }}</code></div>
@@ -14,7 +16,39 @@
   <div><span class="l">Gated commit</span><code>{{ run.gated_sha[:8] or '—' }}</code></div>
   <div><span class="l">Release pipeline</span>{% if run.release_pipeline_id %}<a href="{{ run.release_pipeline_url }}">#{{ run.release_pipeline_id }}</a>{% else %}—{% endif %}</div>
   <div><span class="l">Rewind</span><code>{{ run.rewind_id or '—' }}</code></div>
+  <div><span class="l">Incident</span>{% if run.incident_iid %}<a href="{{ run.incident_url }}">#{{ run.incident_iid }}</a>{% else %}—{% endif %}</div>
 </section>
+
+{% if run.flows %}
+<section>
+  <h2>Agent sessions</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Step</th><th>Duo session</th><th>Status</th><th>Step checkpoint (undo only what came after)</th></tr></thead>
+    <tbody>{% for f in run.flows %}
+      <tr><td>{{ f.step }}</td><td>{% if f.web_url %}<a href="{{ f.web_url }}">#{{ f.workflow_id }}</a>{% else %}#{{ f.workflow_id }}{% endif %}</td>
+      <td>{{ f.status }}</td><td>{% if f.checkpoint_id %}<code>rewind to {{ f.checkpoint_id }}</code>{% else %}—{% endif %}</td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+</section>
+{% endif %}
+
+{% if run.approvals %}
+<section>
+  <h2>Human approvals</h2>
+  <ul class="findings">{% for a in run.approvals %}
+    <li><strong>{{ a.by }}</strong> accepted the risk for <code>{{ a.sha[:8] }}</code> — {{ a.reason }} <span class="muted">({{ a.at.strftime('%Y-%m-%d %H:%M') }} UTC)</span></li>
+  {% endfor %}</ul>
+</section>
+{% endif %}
+
+{% if run.security_findings %}
+<section>
+  <h2>Security findings this change introduced</h2>
+  <ul class="findings">{% for f in run.security_findings %}
+    <li><span class="pill c-irreversible">{{ f.severity }}</span> {{ f.name }} <code>{{ f.file }}{% if f.line %}:{{ f.line }}{% endif %}</code></li>
+  {% endfor %}</ul>
+</section>
+{% endif %}
 
 <section>
   <h2>Lifecycle</h2>
@@ -52,7 +86,7 @@
   {% for cls, items in groups.items() %}
     <div class="group c-{{ cls.value }}">
       <h3>{{ cls.value }} <span class="muted">{{ items | length }}</span></h3>
-      <ul>{% for c in items %}<li>{{ c.summary }}</li>{% else %}<li class="muted">none</li>{% endfor %}</ul>
+      <ul>{% for c in items %}<li>{{ c.summary }}{% if run.provenance.get(c.id) %}<br><span class="by">by {% for who in run.provenance[c.id] %}{% if who[1] %}<a href="{{ who[1] }}">{{ who[0] }}</a>{% else %}{{ who[0] }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</span>{% endif %}</li>{% else %}<li class="muted">none</li>{% endfor %}</ul>
     </div>
   {% endfor %}
   </div>

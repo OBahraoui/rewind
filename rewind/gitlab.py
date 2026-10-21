@@ -185,8 +185,11 @@ class GitLabClient:
     def get_issue(self, iid: int) -> dict | None:
         return self._get_or_none(f"{self._p}/issues/{iid}")
 
-    def create_issue(self, title: str, description: str = "", labels: list[str] | None = None) -> dict:
+    def create_issue(self, title: str, description: str = "", labels: list[str] | None = None,
+                     issue_type: str | None = None) -> dict:
         body = {"title": title, "description": description, "labels": ",".join(labels or [])}
+        if issue_type:
+            body["issue_type"] = issue_type  # "incident" for GitLab Incident Management
         return self._api.json("POST", f"{self._p}/issues", json=body)
 
     def update_issue(self, iid: int, **fields: Any) -> dict:
@@ -267,6 +270,17 @@ class GitLabClient:
 
     def list_pipeline_jobs(self, pipeline_id: int, **params: Any) -> list[dict]:
         return self._paginate(f"{self._p}/pipelines/{pipeline_id}/jobs", **params)
+
+    def job_artifact(self, job_id: int, path: str) -> bytes | None:
+        """One file from a job's artifacts (e.g. gl-sast-report.json), or None."""
+        try:
+            return self._api.request("GET", f"{self._p}/jobs/{job_id}/artifacts/{path}").content
+        except NotFound:
+            return None
+
+    def project_member(self, user_id: int) -> dict | None:
+        """Effective membership (direct or inherited) of a user in this project."""
+        return self._get_or_none(f"{self._p}/members/all/{user_id}")
 
     def create_deployment(self, environment: str, sha: str, ref: str, status: str = "success") -> dict:
         body = {"environment": environment, "sha": sha, "ref": ref, "tag": False, "status": status}

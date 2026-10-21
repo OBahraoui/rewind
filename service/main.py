@@ -41,6 +41,11 @@ class RewindRequest(BaseModel):
     reason: str = "manual"
 
 
+class ApproveRequest(BaseModel):
+    by: str
+    reason: str
+
+
 def create_app(settings: Settings | None = None, *, gitlab: Any = None, cloudrun: Any = None,
                store: Store | None = None, run_ticker: bool = True) -> FastAPI:
     configure_logging()
@@ -143,6 +148,19 @@ def create_app(settings: Settings | None = None, *, gitlab: Any = None, cloudrun
         orch.tick()
         return {"ok": True}
 
+    @app.post("/api/runs/{run_id}/approve")
+    def api_approve(run_id: str, body: ApproveRequest, request: Request) -> dict:
+        """The only way to accept what Rewind can't undo: authenticated, named, reasoned, bound to one commit."""
+        require_token(request)
+        try:
+            run = orch.approve(run_id, by=body.by, reason=body.reason)
+        except LookupError:
+            raise HTTPException(404, "run not found") from None
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from None
+        approvals = [a.model_dump(mode="json") for a in run.approvals]
+        return {"run": run.id, "state": run.state.value, "approvals": approvals}
+
     # -- dashboard -----------------------------------------------------------
     @app.get("/", response_class=HTMLResponse)
     def dashboard(request: Request):
@@ -152,6 +170,9 @@ def create_app(settings: Settings | None = None, *, gitlab: Any = None, cloudrun
             "shipped": sum(r["state"] == "shipped" for r in runs),
             "rewound": sum(r["state"] == "rewound" for r in runs),
             "blocked": sum(r["state"] == "blocked" for r in runs),
+            "flows_today": repo.flows_started_today(),
+            "flow_limit": settings.max_flows_per_day,
+            "active": any(r["state"] not in ("shipped", "rewound", "blocked", "failed") for r in runs),
         }
         return templates.TemplateResponse(request, "index.html", {
             "runs": runs, "stats": stats, "status": {s.value: ledger.STATUS[s] for s in RunState},
@@ -197,6 +218,18 @@ def dispatch(orch: Orchestrator, repo: RunRepository, settings: Settings, event:
         elif event == "Merge Request Hook" or kind == "merge_request":
             for run in repo.find(mr_iid=int(payload["object_attributes"]["iid"])):
                 orch.advance(run.id)
+        elif event == "Note Hook" or kind == "note":
+            attrs = payload.get("object_attributes", {})
+            text = attrs.get("note") or ""
+            if not text.lstrip().lower().startswith("/rewind"):
+                return
+            user = payload.get("user") or {}
+            noteable = attrs.get("noteable_type")
+            orch.command(
+                text=text.strip(), author_id=int(user.get("id") or 0), author=user.get("username") or "unknown",
+                issue_iid=(payload.get("issue") or {}).get("iid") if noteable == "Issue" else None,
+                mr_iid=(payload.get("merge_request") or {}).get("iid") if noteable == "MergeRequest" else None,
+            )
         elif event in ("Pipeline Hook", "Job Hook") or kind in ("pipeline", "build"):
             attrs = payload.get("object_attributes", {})
             sha = attrs.get("sha") or payload.get("sha") or payload.get("checkout_sha")

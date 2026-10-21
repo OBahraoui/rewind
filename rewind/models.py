@@ -58,7 +58,7 @@ class Checkpoint(BaseModel):
     project_id: str
     snapshot_id: str
     created_at: datetime = Field(default_factory=utcnow)
-    kind: Literal["checkpoint", "pre-rewind"] = "checkpoint"
+    kind: Literal["checkpoint", "pre-rewind", "step"] = "checkpoint"
     label: str = ""
     run_id: str | None = None
     issue_iid: int | None = None

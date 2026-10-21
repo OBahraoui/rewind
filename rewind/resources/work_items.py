@@ -23,7 +23,8 @@ class IssueHandler(Handler):
     def snapshot(self, ctx: Context) -> dict[str, dict[str, Any]]:
         items = {i["iid"]: i for i in ctx.gitlab.list_issues(state="opened")}
         items.update({i["iid"]: i for i in ctx.gitlab.list_issues(state="closed", updated_after=_since(ctx))})
-        return {str(iid): self._state(ctx, i) for iid, i in items.items()}
+        return {str(iid): self._state(ctx, i) for iid, i in items.items()
+                if not ctx.policy.ignore.issue(i.get("labels") or [])}
 
     def _state(self, ctx: Context, i: dict) -> dict[str, Any]:
         assignees = i.get("assignees") or []

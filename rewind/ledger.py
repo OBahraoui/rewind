@@ -58,6 +58,8 @@ def render(run: Run, *, change_set: ChangeSet | None = None, report: RewindRepor
         meta.append(f"checkpoint `{run.checkpoint_id}`")
     if run.mr_iid:
         meta.append(_link(f"!{run.mr_iid}", run.mr_url))
+    if run.incident_iid:
+        meta.append(_link(f"incident #{run.incident_iid}", run.incident_url))
     if dashboard_url:
         meta.append(_link("dashboard", f"{dashboard_url}/runs/{run.id}"))
     lines += [" · ".join(meta), ""]
@@ -70,14 +72,35 @@ def render(run: Run, *, change_set: ChangeSet | None = None, report: RewindRepor
             lines.append(f"| {e.stage} | {_link(_esc(e.name), e.url)} | {_esc(e.status)} |")
         lines.append("")
 
+    if run.flows:
+        lines += render_sessions(run)
+
     if run.gate:
         lines += render_gate(run.gate)
 
-    if change_set is not None:
-        lines += render_change_set(change_set)
+    if run.security_findings:
+        lines += ["### Security findings introduced by this change", ""]
+        lines += [f"- [{f['severity']}] {_esc(f['name'])} at "
+                  f"`{f['file']}{':' + str(f['line']) if f.get('line') else ''}`"
+                  for f in run.security_findings]
+        lines.append("")
+
+    if run.approvals:
+        lines += ["### Human approvals", ""]
+        lines += [f"- **{_esc(a.by)}** accepted the risk for `{a.sha[:8]}` at {a.at:%Y-%m-%d %H:%M} UTC: "
+                  f"{_esc(a.reason)}"
+                  for a in run.approvals]
+        lines.append("")
 
     if report is not None:
         lines += render_report(report)
+
+    if change_set is not None:
+        body = render_change_set(change_set, run.provenance)
+        if report is not None:  # the rewind report comes first; keep the full change set one click away
+            lines += ["<details><summary>Change set and who made each change</summary>", "", *body, "</details>", ""]
+        else:
+            lines += body
 
     if run.timeline:
         lines += ["<details><summary>Timeline</summary>", ""]
@@ -104,7 +127,24 @@ def render_gate(gate: GateDecision) -> list[str]:
     return out
 
 
-def render_change_set(cs: ChangeSet) -> list[str]:
+def render_sessions(run: Run) -> list[str]:
+    out = ["### Agent sessions", "", "| Step | Session | Status | Undo just what came after it |", "|---|---|---|---|"]
+    for f in run.flows:
+        name = f"{f.step} #{f.workflow_id}"
+        undo = f"`rewind to {f.checkpoint_id}`" if f.checkpoint_id else ""
+        out.append(f"| {f.step} | {_link(name, f.web_url)} | {_esc(f.status)} | {undo} |")
+    out.append("")
+    return out
+
+
+def _by(provenance: dict | None, change_id: str) -> str:
+    who = (provenance or {}).get(change_id)
+    if not who:
+        return ""
+    return " — _" + ", ".join(_link(label, url) for label, url in who) + "_"
+
+
+def render_change_set(cs: ChangeSet, provenance: dict | None = None) -> list[str]:
     by = cs.by_class()
     out = [f"### Change set — {len(cs.changes)} change(s) since checkpoint `{cs.checkpoint_id}`", ""]
     if not cs.changes:
@@ -115,7 +155,7 @@ def render_change_set(cs: ChangeSet) -> list[str]:
             continue
         out.append(f"**{CLASS_TEXT[cls]} ({len(items)})**")
         for c in items:
-            out.append(f"- {_esc(c.summary)}")
+            out.append(f"- {_esc(c.summary)}{_by(provenance, c.id)}")
         out.append("")
     for kind, err in cs.blind_spots.items():
         out.append(f"- ⚠️ blind spot: {kind} — {_esc(err)}")
