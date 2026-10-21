@@ -41,14 +41,6 @@ OUTCOME_ICON = {
 STAGES = ["plan", "create", "verify", "package", "secure", "release", "configure", "monitor", "govern"]
 
 
-def status_text(run: Run) -> str:
-    """The headline status, specific about what a queued run is waiting for."""
-    if run.state == RunState.QUEUED and run.extra.get("waiting_for"):
-        return (f"⏳ Waiting for pipeline #{run.extra['waiting_for']} on the default branch to finish, "
-                f"so the checkpoint starts from a stable state")
-    return STATUS[run.state]
-
-
 def _esc(text: str) -> str:
     return text.replace("|", "\\|").replace("\n", " ")
 
@@ -60,7 +52,7 @@ def _link(text: str, url: str) -> str:
 def render(run: Run, *, change_set: ChangeSet | None = None, report: RewindReport | None = None,
            dashboard_url: str = "") -> str:
     lines = [LEDGER_MARKER, "## ⏪ Rewind ledger", ""]
-    lines.append(f"**{status_text(run)}**")
+    lines.append(f"**{STATUS[run.state]}**")
     meta = [f"run `{run.id}`"]
     if run.checkpoint_id:
         meta.append(f"checkpoint `{run.checkpoint_id}`")

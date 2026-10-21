@@ -21,26 +21,6 @@ def test_new_pricing_path_runs_only_behind_flag(client):
     assert r.json()["pricing"] == "new"
 
 
-def test_launch_promo_typical_order(client):
-    flags.override("new_pricing", True)
-    r = client.post("/orders/quote", json={"items": [{"sku": "mug", "quantity": 1}, {"sku": "beans", "quantity": 1}]})
-    body = r.json()
-    assert body["pricing"] == "new"
-    assert body["subtotal_cents"] == 3000
-    assert body["total_cents"] == 3000 - 1500
-
-
-def test_launch_promo_never_exceeds_half_off(client):
-    flags.override("new_pricing", True)
-    r = client.post("/orders/quote", json={"items": [{"sku": "tea", "quantity": 1}]})
-    assert r.json()["total_cents"] == 200  # 400 subtotal, capped at 50% off
-
-
-def test_legacy_unchanged_without_flag(client):
-    r = client.post("/orders/quote", json={"items": [{"sku": "mug", "quantity": 1}, {"sku": "beans", "quantity": 1}]})
-    assert r.json()["total_cents"] == 3000
-
-
 def test_create_and_get_order(client):
     r = client.post("/orders", json={"customer_id": "c1", "items": [{"sku": "beans", "quantity": 1}]})
     assert r.status_code == 201

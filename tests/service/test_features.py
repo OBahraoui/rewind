@@ -383,13 +383,3 @@ def test_evidence_records_only_finished_jobs(orch, gl, cr):
     run = orch.advance(run.id)
     assert not any(e.status in ("created", "skipped", "pending") for e in run.evidence)
     assert any("release pipeline #" in e.name for e in run.evidence)
-
-
-def test_queued_status_says_what_it_waits_for(orch, gl):
-    from rewind import ledger
-
-    gl.add_pipeline("main", gl.branches["main"]["sha"], "running")
-    run = orch.start_run(gl.add_issue("Promo", labels=["rewind:auto"]))
-    assert "Waiting for pipeline" in ledger.status_text(run)
-    body = next(n["body"] for n in gl.issue_notes[run.issue_iid] if ledger.LEDGER_MARKER in n["body"])
-    assert "stable state" in body
