@@ -47,22 +47,39 @@ class RepositoryHandler(Handler):
             return live == change.before
         if live["sha"] == change.before["sha"]:
             return True
-        cmp = ctx.gitlab.compare(change.before["sha"], live["sha"])
+        target = change.before["sha"]
+        if ctx.code_scope:  # only the run's own paths must be back; later work by others stays
+            return all(_same(ctx, p, live["sha"], target) for d in _scoped_diffs(ctx, target) for p in _paths(d))
+        cmp = ctx.gitlab.compare(target, live["sha"])
         return not cmp.get("diffs") and not cmp.get("compare_timeout")
 
     def apply(self, ctx: Context, change: Change, live: dict[str, Any] | None) -> str:
         assert change.before and live
         target, head = change.before["sha"], live["sha"]
         branch = ctx.meta["default_branch"]
-        actions = restore_actions(ctx, target, head)
+        note = ""
+        if ctx.code_scope:
+            # Revert only what the run changed, and only where nobody changed it since.
+            clean, conflicts = [], []
+            for d in _scoped_diffs(ctx, target):
+                (clean if all(_same(ctx, p, head, ctx.code_scope) for p in _paths(d)) else conflicts).append(d)
+            actions = _actions_for(ctx, clean, target)
+            later = ctx.gitlab.compare(ctx.code_scope, head).get("commits", []) if head != ctx.code_scope else []
+            if later:
+                note += f"; kept {len(later)} later commit(s) by others"
+            if conflicts:
+                note += ("; left untouched because they were changed again after the run: "
+                         + ", ".join(sorted(d["new_path"] for d in conflicts)))
+        else:
+            actions = restore_actions(ctx, target, head)
         if not actions:
-            return "tree already matches the checkpoint"
+            return "tree already matches the checkpoint" + note
         title = f"Rewind {ctx.rewind_id}: restore {branch} to checkpoint {ctx.checkpoint_id}"
         message = f"{title}\n\nRestores {len(actions)} path(s) to {target[:12]}.\n\n{REWIND_MARKER}"
         if ctx.restore_mode == "direct":
             commit = ctx.gitlab.create_commit(branch, message, actions)
-            return f"restore commit {commit['id'][:8]} on {branch} ({len(actions)} paths)"
-        return self._restore_via_mr(ctx, branch, head, title, message, actions)
+            return f"restore commit {commit['id'][:8]} on {branch} ({len(actions)} paths){note}"
+        return self._restore_via_mr(ctx, branch, head, title, message, actions) + note
 
     def _restore_via_mr(self, ctx: Context, branch: str, head: str, title: str, message: str,
                         actions: list[dict]) -> str:
@@ -105,13 +122,34 @@ def merge_when_mergeable(ctx: Context, iid: int, sha: str, message: str, attempt
     raise RuntimeError(f"could not merge !{iid}: {last}")
 
 
+def _paths(d: dict) -> set[str]:
+    return {d["old_path"], d["new_path"]}
+
+
+def _same(ctx: Context, path: str, ref_a: str, ref_b: str) -> bool:
+    return ctx.gitlab.get_file_raw(path, ref_a) == ctx.gitlab.get_file_raw(path, ref_b)
+
+
+def _scoped_diffs(ctx: Context, target: str) -> list[dict]:
+    """What the run itself changed: the checkpoint compared with the run's own last commit."""
+    cmp = ctx.gitlab.compare(target, ctx.code_scope)
+    if cmp.get("compare_timeout"):
+        raise RuntimeError("GitLab compare timed out; change set too large to restore safely")
+    return cmp.get("diffs", [])
+
+
 def restore_actions(ctx: Context, target: str, head: str) -> list[dict]:
     """Commit actions that make `head`'s tree equal to `target`'s tree."""
     cmp = ctx.gitlab.compare(target, head)
     if cmp.get("compare_timeout"):
         raise RuntimeError("GitLab compare timed out; change set too large to restore safely")
+    return _actions_for(ctx, cmp.get("diffs", []), target)
+
+
+def _actions_for(ctx: Context, diffs: list[dict], target: str) -> list[dict]:
+    """Commit actions that put every path in `diffs` back to its content at `target`."""
     actions: list[dict] = []
-    for d in cmp.get("diffs", []):
+    for d in diffs:
         old, new = d["old_path"], d["new_path"]
         if d.get("a_mode") == "160000" or d.get("b_mode") == "160000":
             raise RuntimeError(f"submodule change at {new} is not supported")

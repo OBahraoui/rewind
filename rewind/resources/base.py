@@ -31,6 +31,9 @@ class Context:
     checkpoint_id: str = ""
     checkpoint_sha: str = ""
     restore_mode: str = "mr"  # "mr": restore via a merged MR; "direct": commit to the default branch
+    # When set, the code restore reverts only what changed between the checkpoint and this commit (the
+    # run's own merge) and keeps every later commit by anyone else.
+    code_scope: str = ""
     sleep: Callable[[float], None] = time.sleep
     # Objects Rewind created itself (restore branches and MRs, incidents). Tracked by identity, not by
     # label or name, so an agent can't hide its own changes by dressing them up as Rewind's.

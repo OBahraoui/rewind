@@ -137,11 +137,15 @@ class Rewind:
         return self.rewind(checkpoint_id, dry_run=True)
 
     def rewind(self, checkpoint_id: str, *, dry_run: bool = False, reason: str = "manual",
-               trigger: dict | None = None) -> RewindReport:
+               trigger: dict | None = None, code_scope: str = "") -> RewindReport:
+        """`code_scope`: revert only code the run changed up to this commit; keep later commits by others."""
         cp = self.get_checkpoint(checkpoint_id)
         report = RewindReport(id=new_id("rw"), project_id=self.project_id, checkpoint_id=cp.id,
-                              reason=reason, trigger=trigger or {}, dry_run=dry_run)
-        ctx = replace(self.ctx, rewind_id=report.id, checkpoint_id=cp.id, checkpoint_sha=cp.default_sha)
+                              reason=reason, trigger={**(trigger or {}), **({"code_scope": code_scope}
+                                                                         if code_scope else {})},
+                              dry_run=dry_run)
+        ctx = replace(self.ctx, rewind_id=report.id, checkpoint_id=cp.id, checkpoint_sha=cp.default_sha,
+                      code_scope=code_scope)
         load_meta(ctx)
         started = time.monotonic()
 

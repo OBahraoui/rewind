@@ -499,10 +499,14 @@ class Orchestrator:
                              f"not this change); retried it")
                 return
             self._pipeline_evidence(run, pipeline)
-            names = ", ".join(f"{j['name']} ({(j.get('failure_reason') or 'failed').replace('_', ' ')})"
-                              for j in failed_jobs) or status
-            self._rewind(run, f"release pipeline failed: {names}", {"pipeline_id": pipeline["id"],
-                                                                     "jobs": [j["name"] for j in failed_jobs]})
+            if failed_jobs:
+                names = ", ".join(f"{j['name']} ({(j.get('failure_reason') or 'failed').replace('_', ' ')})"
+                                  for j in failed_jobs)
+                reason = f"release pipeline failed: {names}"
+            else:
+                reason = (f"release pipeline was {status} before it finished (for example superseded by a newer "
+                          f"push to {self.default_branch}), so production state is unknown")
+            self._rewind(run, reason, {"pipeline_id": pipeline["id"], "jobs": [j["name"] for j in failed_jobs]})
 
     def _on_rewinding(self, run: Run) -> None:
         self._rewind(run, run.extra.get("rewind_reason", "resuming an interrupted rewind"))
@@ -594,7 +598,10 @@ class Orchestrator:
             self.repo.save(run)
             self._publish(run)
         self._cancel_release(run)
-        report = self.engine.rewind(run.checkpoint_id, reason=reason, trigger={"run": run.id, **(trigger or {})})
+        # Revert only the code this run merged; a commit an agent pushed around the gate is reverted too.
+        scope = "" if (trigger or {}).get("ungated_commits") else run.merge_sha
+        report = self.engine.rewind(run.checkpoint_id, reason=reason, trigger={"run": run.id, **(trigger or {})},
+                                    code_scope=scope)
         run.rewind_id = report.id
         if report.change_set:
             self._attribute(run, report.change_set)

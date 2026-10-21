@@ -393,3 +393,16 @@ def test_queued_status_says_what_it_waits_for(orch, gl):
     assert "Waiting for pipeline" in ledger.status_text(run)
     body = next(n["body"] for n in gl.issue_notes[run.issue_iid] if ledger.LEDGER_MARKER in n["body"])
     assert "stable state" in body
+
+
+def test_human_push_during_release_survives_the_rewind(orch, gl, cr):
+    issue = gl.add_issue("Promo pricing", labels=["rewind:auto"])
+    run = drive_to_merge(orch, gl, cr, orch.start_run(issue), issue)
+    gl.commit_files("main", {"docs/notes.md": "human work\n"}, author=("Othmane", "o@example.com"))
+    gl.add_pipeline("main", run.merge_sha, "canceled", jobs=release_jobs("canceled"))
+    run = orch.advance(run.id)
+    assert run.state is RunState.REWOUND
+    assert "superseded by a newer push" in run.extra["rewind_reason"]
+    assert gl.tree("main")["docs/notes.md"] == "human work\n"
+    assert "def legacy_total(items):\n    return sum(items)" in gl.tree("main")["app/pricing.py"]
+    assert orch.engine.get_report(run.rewind_id).zero_drift

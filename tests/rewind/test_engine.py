@@ -269,3 +269,34 @@ def test_restore_falls_back_to_direct_commit_when_mr_cannot_merge(engine, gl, mo
     restore_mr = next(m for m in gl.mrs.values() if m["source_branch"].startswith("rewind/"))
     assert restore_mr["state"] == "closed"
     assert "MR merge unavailable" in next(s for s in report.steps if s.kind == "repository").detail
+
+
+def test_scoped_restore_keeps_later_commits_by_others(engine, gl):
+    cp = engine.checkpoint()
+    gl.commit_files("agent", {"app/pricing.py": "def legacy_total(items):\n    return 0\n"})
+    mr = gl.create_merge_request("agent", "main", "promo")
+    merge_sha = gl.merge_merge_request(mr["iid"])["merge_commit_sha"]
+    gl.commit_files("main", {"docs/human.md": "my work\n"}, author=("Othmane", "o@example.com"))
+
+    report = engine.rewind(cp.id, code_scope=merge_sha)
+
+    assert report.zero_drift, report.verification
+    tree = gl.tree("main")
+    assert tree["app/pricing.py"] == "def legacy_total(items):\n    return sum(items)\n"  # run's change undone
+    assert tree["docs/human.md"] == "my work\n"  # the human's later commit kept
+    assert "kept 1 later commit" in next(s for s in report.steps if s.kind == "repository").detail
+
+
+def test_scoped_restore_never_overwrites_a_file_changed_again_later(engine, gl):
+    cp = engine.checkpoint()
+    gl.commit_files("agent", {"app/pricing.py": "agent version\n"})
+    mr = gl.create_merge_request("agent", "main", "promo")
+    merge_sha = gl.merge_merge_request(mr["iid"])["merge_commit_sha"]
+    gl.commit_files("main", {"app/pricing.py": "human fixed it\n"}, author=("Othmane", "o@example.com"))
+
+    report = engine.rewind(cp.id, code_scope=merge_sha)
+
+    assert gl.tree("main")["app/pricing.py"] == "human fixed it\n"
+    step = next(s for s in report.steps if s.kind == "repository")
+    assert "changed again after the run: app/pricing.py" in step.detail
+    assert not report.zero_drift  # honest: the run's change to that file is not undone
