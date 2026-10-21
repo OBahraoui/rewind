@@ -92,6 +92,9 @@ def create_app(settings: Settings | None = None, *, gitlab: Any = None, cloudrun
             raise HTTPException(401, "missing or wrong bearer token")
 
     # -- health & webhooks ---------------------------------------------------
+    # Cloud Run reserves URL paths ending in "z" (its front end answers /healthz itself), so /health is the
+    # public check; /healthz stays for local runs and container probes.
+    @app.get("/health")
     @app.get("/healthz")
     def healthz() -> dict:
         return {"ok": True, "project": settings.project_id}

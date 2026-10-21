@@ -81,3 +81,9 @@ def test_mcp_tools(client):
     listing = client.post("/mcp/", json={"jsonrpc": "2.0", "id": 3, "method": "tools/list"}, headers=headers)
     names = {t["name"] for t in listing.json()["result"]["tools"]}
     assert {"rewind_policy", "classify_action", "check_paths", "get_ledger", "explain_checkpoint"} <= names
+
+
+def test_health_endpoints(client):
+    for path in ("/health", "/healthz"):
+        r = client.get(path)
+        assert r.status_code == 200 and r.json()["ok"] is True
