@@ -21,8 +21,15 @@ def legacy_total(lines: list[Line]) -> int:
     return subtotal(lines)
 
 
+LAUNCH_PROMO_CENTS = 1500
+MAX_DISCOUNT_PERCENT = 50
+
+
 def new_pricing_total(lines: list[Line]) -> int:
-    return subtotal(lines)
+    """Launch promo: $15 off every order, never more than 50% of the subtotal."""
+    sub = subtotal(lines)
+    max_discount = sub * MAX_DISCOUNT_PERCENT // 100
+    return sub - min(LAUNCH_PROMO_CENTS, max_discount)
 
 
 def total(lines: list[Line], customer_id: str = "") -> tuple[int, str]:
