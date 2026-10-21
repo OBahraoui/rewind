@@ -97,7 +97,11 @@
 <section>
   <h2>⏪ Rewind <code>{{ report.id }}</code></h2>
   <section class="tiles">
-    <div class="tile"><span class="n">{{ '%.1f' % report.mitigated_after_s if report.mitigated_after_s is not none else '—' }}s</span><span class="l">to mitigate production</span></div>
+    {% if report.mitigated_after_s is not none %}
+    <div class="tile"><span class="n">{{ '%.1f' % report.mitigated_after_s }}s</span><span class="l">to mitigate production</span></div>
+    {% else %}
+    <div class="tile"><span class="n">—</span><span class="l">production never changed</span></div>
+    {% endif %}
     <div class="tile"><span class="n">{{ '%.1f' % (report.finished_at - report.started_at).total_seconds() if report.finished_at else '—' }}s</span><span class="l">to restore everything</span></div>
     <div class="tile {{ 'ok' if report.zero_drift else 'bl' }}"><span class="n">{{ 'zero' if report.zero_drift else report.verification.drift | length if report.verification else '?' }}</span><span class="l">drift after verification</span></div>
   </section>
