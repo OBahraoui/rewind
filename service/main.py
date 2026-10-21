@@ -194,7 +194,7 @@ def create_app(settings: Settings | None = None, *, gitlab: Any = None, cloudrun
         cs = report.change_set if report and report.change_set else repo.change_set(run_id)
         groups = cs.by_class() if cs else {r: [] for r in Reversibility}
         return templates.TemplateResponse(request, "run.html", {
-            "run": run, "status": ledger.STATUS[run.state], "groups": groups, "change_set": cs,
+            "run": run, "status": ledger.status_text(run), "groups": groups, "change_set": cs,
             "report": report, "stages": ledger.STAGES,
         })
 
