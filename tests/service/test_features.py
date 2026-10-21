@@ -330,3 +330,19 @@ def test_mr_merged_outside_rewind_while_fixing_is_rewound(orch, gl):
     gl.merge_merge_request(mr)  # someone merges the known-vulnerable commit
     run = orch.advance(run.id)
     assert run.state is RunState.REWOUND and "merged outside Rewind" in run.extra["rewind_reason"]
+
+
+def test_failed_agent_session_is_retried_once(orch, gl):
+    issue = gl.add_issue("Promo", labels=["rewind:auto"])
+    run = orch.start_run(issue)
+    finish_flow(gl, run, "plan")
+    run = orch.advance(run.id)
+    first = run.current_flow("develop")
+    finish_flow(gl, run, "develop", status="failed")
+    run = orch.advance(run.id)
+    retry = run.current_flow("develop")
+    assert run.state is RunState.DEVELOPING and retry.workflow_id != first.workflow_id and retry.attempt == 2
+    assert gl.workflows[retry.workflow_id]["payload"]["goal"] == gl.workflows[first.workflow_id]["payload"]["goal"]
+    finish_flow(gl, run, "develop", status="failed")  # the retry fails too: now the run stops
+    run = orch.advance(run.id)
+    assert run.state is RunState.FAILED and "developer flow ended with failed" in run.error

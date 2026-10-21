@@ -1,15 +1,20 @@
 # Runtime for Duo flows in this project (read from the default branch only).
-# The setup gives agents what they need to run the app's tests; the network policy
-# keeps them from reaching external systems, which is what makes their actions
-# undoable: nothing they do can leave the project.
+#
+# Setup must never fail a session: the default flow image may not ship Python or pip, and the
+# merge request pipeline runs the full test suite anyway. So test dependencies are installed when
+# possible and skipped (with a message) when not.
+#
+# The network policy keeps agents from reaching external systems, which is what makes their
+# actions undoable: nothing they do can leave the project.
 setup_script:
-  - pip install -q -r app/requirements-dev.txt
-cache:
-  key:
-    files:
-      - app/requirements-dev.txt
-  paths:
-    - .cache/pip
+  - |
+    if command -v python3 >/dev/null 2>&1; then
+      python3 -m pip --version >/dev/null 2>&1 || python3 -m ensurepip --upgrade >/dev/null 2>&1 || true
+      python3 -m pip install -q -r app/requirements-dev.txt \
+        || echo "Rewind: test dependencies not installed; the merge request pipeline runs the tests"
+    else
+      echo "Rewind: no python3 in this image; the merge request pipeline runs the tests"
+    fi
 network_policy:
   allowed_domains:
     - pypi.org

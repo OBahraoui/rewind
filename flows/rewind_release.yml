@@ -52,8 +52,8 @@ prompts:
           app/pricing.py, never change legacy_total() (the live default path). Put new pricing
           logic in new_pricing_total() and turn the flag on for production in config/flags.yaml
           (`new_pricing: {staging: true, production: true}`); the pipeline applies it.
-        - Write or update tests in app/tests for every behaviour change, and run them:
-          `pip install -q -r app/requirements-dev.txt && pytest -q app/tests`.
+        - Write or update tests in app/tests for every behaviour change. Run them if Python is
+          available (`python3 -m pytest -q app/tests`); the merge request pipeline always runs them.
         - Never edit rewind/, service/, flows/, agents/, ci/, infra/, .gitlab/, .gitlab-ci.yml,
           AGENTS.md or CLAUDE.md.
         - Never add code that calls external services or sends messages, and never add a

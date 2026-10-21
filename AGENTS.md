@@ -12,8 +12,8 @@ stopped only for what it can't.
   - Turn the flag on per environment in `config/flags.yaml`; the pipeline applies it.
 - Prices are integer cents. No order may be discounted by more than 50%: production
   monitoring checks this on every response and triggers a rewind if it breaks.
-- Add or update tests in `app/tests` for every behaviour change:
-  `pip install -r app/requirements-dev.txt && pytest app/tests`.
+- Add or update tests in `app/tests` for every behaviour change. Run them if Python is available
+  (`python3 -m pytest app/tests`); the merge request pipeline always runs them.
 
 ## Never (the merge request will be blocked)
 - Edit `rewind/`, `service/`, `flows/`, `agents/`, `ci/`, `infra/`, `.gitlab/`, `.gitlab-ci.yml`,

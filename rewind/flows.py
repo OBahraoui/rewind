@@ -76,9 +76,18 @@ class Flows:
         body = self.payload(step, goal, **kw)
         resp = self.gitlab.start_workflow(body)
         flow = FlowRun(step=step, ref=str(self.refs[kw.get("using") or step]), workflow_id=int(resp["id"]),
-                       status=str(resp.get("status", "created")).lower(), web_url=resp.get("web_url") or "")
+                       status=str(resp.get("status", "created")).lower(), web_url=resp.get("web_url") or "",
+                       request=body)
         log.info("flow started", extra={"step": step, "workflow_id": flow.workflow_id, "ref": flow.ref})
         return flow
+
+    def retry(self, flow: FlowRun) -> FlowRun:
+        """Start the same flow again (same goal, privileges and context) as a fresh session."""
+        resp = self.gitlab.start_workflow(flow.request)
+        log.info("flow retried", extra={"step": flow.step, "failed": flow.workflow_id, "workflow_id": resp["id"]})
+        return FlowRun(step=flow.step, ref=flow.ref, workflow_id=int(resp["id"]), attempt=flow.attempt + 1,
+                       status=str(resp.get("status", "created")).lower(), web_url=resp.get("web_url") or "",
+                       request=flow.request)
 
     def poll(self, flow: FlowRun) -> str:
         """Refresh `flow.status`; return done | failed | needs_human | running."""

@@ -44,6 +44,8 @@ class FlowRun(BaseModel):
     error: str | None = None
     web_url: str = ""  # the Duo agent session page
     checkpoint_id: str | None = None  # step checkpoint taken when this flow finished
+    attempt: int = 1
+    request: dict[str, Any] = Field(default_factory=dict)  # the start payload, for a retry
 
 
 class Approval(BaseModel):

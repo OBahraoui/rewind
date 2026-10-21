@@ -45,6 +45,7 @@ TIMEOUTS = {
     RunState.RELEASING: timedelta(minutes=45),
 }
 NEEDS_HUMAN_GRACE = timedelta(minutes=3)
+MAX_FLOW_ATTEMPTS = 2  # a failed agent session is retried once as a fresh session
 
 # States in which the default branch must not move except through Rewind's gated merge.
 GUARDED = {RunState.PLANNING, RunState.DEVELOPING, RunState.GATING, RunState.REROUTING, RunState.TESTING,
@@ -210,6 +211,14 @@ class Orchestrator:
         if flow is None:
             return "done"
         status = self.flows.poll(flow)
+        if status == "failed" and flow.attempt < MAX_FLOW_ATTEMPTS and flow.request:
+            flow.finished_at = flow.finished_at or utcnow()
+            if self.repo.take_flow_budget(self.settings.max_flows_per_day):
+                retry = self.flows.retry(flow)
+                run.flows.append(retry)
+                run.note(f"{STEP_LABEL.get(step, step)} #{flow.workflow_id} failed; "
+                         f"retrying once as #{retry.workflow_id}")
+                return "running"
         if status in ("done", "failed"):
             flow.finished_at = flow.finished_at or utcnow()
             if flow.checkpoint_id is None:  # step checkpoint: what this agent session changed, undoable alone
