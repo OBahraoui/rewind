@@ -442,6 +442,55 @@ def approve(run_id: str,
 
 
 @app.command()
+def gate(base: Annotated[str, typer.Option(help="Base commit (e.g. $CI_MERGE_REQUEST_DIFF_BASE_SHA)")],
+         head: Annotated[str, typer.Option(help="Head commit (e.g. $CI_COMMIT_SHA)")],
+         policy: Annotated[str, typer.Option(help="Policy file; empty uses Rewind's built-in policy")] = "",
+         repo: Annotated[Path, typer.Option(help="Path to the git checkout")] = Path("."),
+         report: Annotated[Path, typer.Option(help="JSON report path")] = Path("rewind-gate.json"),
+         junit: Annotated[Path, typer.Option(help="JUnit report for the MR widget")] = Path("rewind-gate.xml"),
+         fail_on: Annotated[str, typer.Option(help="block | reroute: the verdict that fails the job")] = "block",
+         ) -> None:
+    """Run the reversibility gate on a commit range from a local checkout (no token needed)."""
+    from xml.sax.saxutils import escape
+
+    from rewind import gate as gate_mod
+    from rewind.localgit import LocalGit
+
+    pol_path = policy if policy and Path(policy).is_file() else None
+    if policy and not pol_path:
+        typer.secho(f"policy {policy} not found; using Rewind's built-in policy", fg="yellow")
+    ctx = Context(gitlab=LocalGit(repo), policy=Policy.load(pol_path), hash_key=b"")
+    decision = gate_mod.evaluate(ctx, None, base, head)
+    report.write_text(decision.model_dump_json(indent=2), encoding="utf-8")
+
+    by_rule: dict[str, list] = {}
+    for f in decision.findings:
+        by_rule.setdefault(f.rule_id, []).append(f)
+    with junit.open("w", encoding="utf-8") as fh:
+        fh.write(f'<testsuite name="rewind-gate" tests="{max(1, len(by_rule))}" failures="{len(by_rule)}">\n')
+        if not by_rule:
+            fh.write('  <testcase classname="rewind.gate" name="everything this change ships can be undone"/>\n')
+        for rule, items in by_rule.items():
+            detail = "\n".join(f"{f.path}:{f.line or ''} {f.message} {f.evidence}" for f in items)
+            fh.write(f'  <testcase classname="rewind.gate" name="{escape(rule)}">\n'
+                     f'    <failure message="{escape(items[0].message)}">{escape(detail)}</failure>\n  </testcase>\n')
+        fh.write("</testsuite>\n")
+
+    color = {"allow": "green", "reroute": "yellow", "block": "red"}[decision.verdict]
+    typer.secho(f"Reversibility gate: {decision.verdict.upper()} ({len(decision.files_checked)} files, "
+                f"{base[:8]}..{head[:8]})", fg=color, bold=True)
+    for f in decision.findings:
+        where = f" {f.path}{':' + str(f.line) if f.line else ''}" if f.path else ""
+        typer.echo(f"  - {f.rule_id}{where}: {f.message}")
+        if f.instruction:
+            typer.echo(f"    how to make it undoable: {f.instruction}")
+    if decision.verdict == "allow":
+        typer.echo("  Everything this change ships can be undone by Rewind.")
+    failing = {"block": {"block"}, "reroute": {"block", "reroute"}}.get(fail_on, {"block"})
+    raise typer.Exit(1 if decision.verdict in failing else 0)
+
+
+@app.command()
 def keys() -> None:
     """Generate the random secrets .env needs."""
     typer.echo(f"REWIND_HASH_KEY={secrets.token_hex(32)}")

@@ -33,6 +33,15 @@ default:
     paths: [.cache/pip]
 
 include:
+  # Our own CI/CD component (templates/gate.yml), at this exact commit: every merge request pipeline
+  # shows Rewind's reversibility verdict as a job and a test report. The Rewind service is the
+  # enforcing gate (it also honours human approvals), so here the job reports without failing.
+  - component: $CI_SERVER_FQDN/$CI_PROJECT_PATH/gate@$CI_COMMIT_SHA
+    inputs:
+      stage: secure
+      policy: rewind/policy.yaml
+      rewind_package: "."
+      allow_failure: true
   - template: Jobs/SAST.gitlab-ci.yml
   - template: Jobs/Dependency-Scanning.gitlab-ci.yml
   - template: Jobs/Secret-Detection.gitlab-ci.yml
