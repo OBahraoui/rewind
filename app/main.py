@@ -6,12 +6,14 @@ import os
 import time
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from app import pricing
 from app.catalog import PRODUCTS
 from app.flags import flags
 from app.store import orders
+from app.storefront import PAGE
 
 app = FastAPI(title="Rewind demo shop", version=os.environ.get("APP_VERSION", "dev"))
 
@@ -41,6 +43,11 @@ def _price(req: OrderRequest) -> dict:
         "total_cents": total,
         "pricing": model,
     }
+
+
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+def storefront() -> str:
+    return PAGE
 
 
 @app.get("/health")

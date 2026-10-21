@@ -33,3 +33,9 @@ def test_validation(client):
     assert client.post("/orders/quote", json={"items": [{"sku": "tea", "quantity": 0}]}).status_code == 422
     assert client.post("/orders/quote", json={"items": []}).status_code == 422
     assert client.get("/orders/999999").status_code == 404
+
+
+def test_storefront_page(client):
+    r = client.get("/")
+    assert r.status_code == 200 and "Rewind demo shop" in r.text
+    assert "orders/quote" in r.text  # prices come from this revision's own API
