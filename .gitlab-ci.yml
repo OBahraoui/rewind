@@ -166,7 +166,7 @@ smoke:staging:
   needs: [deploy:staging, configure:staging]
   rules: *release-rules
   script:
-    - python ci/monitor.py --url "$DEPLOY_URL" --mode smoke --report smoke-report.json --junit smoke-junit.xml
+    - python ci/monitor.py --url "$DEPLOY_URL" --mode smoke --require-flags --report smoke-report.json --junit smoke-junit.xml
   artifacts:
     when: always
     paths: [smoke-report.json]
@@ -216,7 +216,7 @@ monitor:production:
   variables:
     MONITOR_WINDOW_SECONDS: "180"
   script:
-    - python ci/monitor.py --url "$DEPLOY_URL" --window "$MONITOR_WINDOW_SECONDS"
+    - python ci/monitor.py --url "$DEPLOY_URL" --window "$MONITOR_WINDOW_SECONDS" --require-flags
   artifacts:
     when: always
     paths: [monitor-report.json]

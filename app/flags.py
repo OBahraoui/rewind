@@ -30,6 +30,8 @@ class FlagClient:
         self._fetched_at = 0.0
         self._lock = threading.Lock()
         self._overrides: dict[str, bool] = {}
+        self.last_error: str | None = None  # why the last refresh failed, if it did
+        self._ever_fetched = False
 
     @classmethod
     def from_env(cls) -> FlagClient:
@@ -59,8 +61,23 @@ class FlagClient:
                     "UNLEASH-INSTANCEID": self.instance_id, "UNLEASH-APPNAME": self.app_name})
                 resp.raise_for_status()
                 self._features = {f["name"]: f for f in resp.json().get("features", [])}
+                self.last_error, self._ever_fetched = None, True
+            except httpx.HTTPStatusError as exc:
+                self.last_error = f"HTTP {exc.response.status_code} from GitLab feature flags"
+                log.warning("feature flag refresh failed: %s", self.last_error)
             except Exception as exc:
+                self.last_error = f"{type(exc).__name__}: {exc}"
                 log.warning("feature flag refresh failed: %s", exc)
+
+    def status(self) -> str:
+        """`ok`, `unconfigured`, or `error: <reason>`. Monitoring fails on errors: a pricing
+        flag that can't be read silently falls back to off, which hides a broken release."""
+        if not self.configured:
+            return "unconfigured"
+        self._refresh()
+        if self.last_error:
+            return f"error: {self.last_error}" + ("" if self._ever_fetched else " (never loaded)")
+        return "ok"
 
     def is_enabled(self, name: str, user_id: str = "") -> bool:
         if name in self._overrides:

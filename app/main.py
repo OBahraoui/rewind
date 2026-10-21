@@ -51,6 +51,7 @@ def health() -> dict:
         "revision": os.environ.get("K_REVISION", "local"),
         "environment": os.environ.get("UNLEASH_APP_NAME", "local"),
         "flags": flags.snapshot(),
+        "flags_status": flags.status(),
     }
 
 

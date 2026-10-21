@@ -82,13 +82,16 @@ def main() -> int:
     p.add_argument("--max-latency", type=float, default=2.0)
     p.add_argument("--report", default="monitor-report.json")
     p.add_argument("--junit", default="monitor-junit.xml")
+    p.add_argument("--require-flags", action="store_true",
+                   help="fail unless the app has loaded GitLab feature flags (use in CI)")
     args = p.parse_args()
     url = args.url.rstrip("/")
 
     status, health, _ = call("GET", f"{url}/health")
     if status != 200:
         print(f"health check failed: HTTP {status}")
-    print(f"monitoring {url} revision={health.get('revision')} flags={health.get('flags')}")
+    flags_status = str(health.get("flags_status", "ok"))
+    print(f"monitoring {url} revision={health.get('revision')} flags={health.get('flags')} flags_status={flags_status}")
     time.sleep(args.warmup if args.mode == "full" else 0)
     _, catalog, _ = call("GET", f"{url}/products")
 
@@ -117,8 +120,12 @@ def main() -> int:
     invariant_breaks = [(c, pr) for c, r in results.items() for v in r["problems"] for pr in v["problems"]
                         if not pr.startswith(("HTTP", "slow"))]
     error_rate = failures / requests
+    if flags_status.startswith("error") or (args.require_flags and flags_status != "ok"):
+        # Flags silently "off" would hide what's really released.
+        invariant_breaks.append(("feature-flags", f"app cannot read feature flags: {flags_status}"))
     verdict = "pass" if error_rate <= args.max_error_rate and not invariant_breaks and status == 200 else "fail"
     report = {"url": url, "mode": args.mode, "revision": health.get("revision"), "flags": health.get("flags"),
+              "flags_status": flags_status,
               "requests": requests, "failures": failures, "error_rate": round(error_rate, 4),
               "invariant_violations": len(invariant_breaks), "verdict": verdict, "cases": results}
     with open(args.report, "w", encoding="utf-8") as fh:

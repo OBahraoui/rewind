@@ -53,3 +53,19 @@ def test_keeps_last_known_state_when_gitlab_is_down(monkeypatch):
 
 def test_unconfigured_client_is_off():
     assert not FlagClient().is_enabled("f")
+
+
+def test_status_reports_auth_failure(monkeypatch):
+    def unauthorized(url, timeout, headers):
+        return httpx.Response(401, json={"message": "401 Unauthorized"}, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(httpx, "get", unauthorized)
+    c = FlagClient("https://gitlab.com/api/v4/feature_flags/unleash/1", "wrong", "production", refresh_s=0)
+    assert c.status() == "error: HTTP 401 from GitLab feature flags (never loaded)"
+    assert not c.is_enabled("new_pricing")  # still fails closed for the app...
+
+
+def test_status_ok_and_unconfigured(monkeypatch):
+    c, _ = client_with([{"name": "f", "enabled": True, "strategies": [{"name": "default"}]}], monkeypatch)
+    assert c.status() == "ok"
+    assert FlagClient().status() == "unconfigured"
