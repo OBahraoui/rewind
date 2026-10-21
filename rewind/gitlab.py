@@ -268,6 +268,9 @@ class GitLabClient:
     def get_pipeline(self, pipeline_id: int) -> dict | None:
         return self._get_or_none(f"{self._p}/pipelines/{pipeline_id}")
 
+    def retry_job(self, job_id: int) -> dict:
+        return self._api.json("POST", f"{self._p}/jobs/{job_id}/retry")
+
     def cancel_pipeline(self, pipeline_id: int) -> dict:
         return self._api.json("POST", f"{self._p}/pipelines/{pipeline_id}/cancel")
 

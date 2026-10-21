@@ -47,6 +47,13 @@ TIMEOUTS = {
 NEEDS_HUMAN_GRACE = timedelta(minutes=3)
 MAX_FLOW_ATTEMPTS = 2  # a failed agent session is retried once as a fresh session
 
+# Job failures that are the platform's fault, not the change's: retried before anything is rewound.
+INFRA_FAILURES = {"runner_system_failure", "stuck_or_timeout_failure", "scheduler_failure", "api_failure",
+                  "runner_unsupported", "unknown_failure", "data_integrity_failure", "job_execution_timeout",
+                  "stale_schedule", "archived_failure", "unmet_prerequisites"}
+ACTIVE_PIPELINE = {"created", "waiting_for_resource", "preparing", "pending", "running", "scheduled"}
+FINISHED_JOB = {"success", "failed", "canceled"}
+
 # States in which the default branch must not move except through Rewind's gated merge.
 GUARDED = {RunState.PLANNING, RunState.DEVELOPING, RunState.GATING, RunState.REROUTING, RunState.TESTING,
            RunState.FIXING, RunState.REVIEWING, RunState.MERGING, RunState.RELEASING}
@@ -189,6 +196,16 @@ class Orchestrator:
         earlier = [r for r in self.repo.active() if r.id != run.id and r.created_at < run.created_at]
         if earlier:
             return  # serialized: wait for the project's current run
+        if not run.checkpoint_id:
+            recent = self.gitlab.list_pipelines(ref=self.default_branch)[:5]
+            busy = [p for p in recent if p["status"] in ACTIVE_PIPELINE]
+            if busy:
+                # A release still in flight would land inside this run's change set and be credited to the agent.
+                if run.extra.get("waiting_for") != busy[0]["id"]:
+                    run.extra["waiting_for"] = busy[0]["id"]
+                    run.note(f"waiting for {self.default_branch} pipeline #{busy[0]['id']} to finish before taking "
+                             f"the checkpoint, so the starting state is stable")
+                return
         if run.checkpoint_id:  # a retry after a failed flow start must keep the original checkpoint
             cp = self.engine.get_checkpoint(run.checkpoint_id)
         else:
@@ -326,12 +343,12 @@ class Orchestrator:
         run.move(RunState.GATING, "rerouted change ready; gating again")
 
     def _pipeline_evidence(self, run: Run, pipeline: dict, stages: set[str] | None = None) -> None:
+        kind = "release pipeline" if pipeline.get("ref") == self.default_branch else "MR pipeline"
         for job in self.gitlab.list_pipeline_jobs(pipeline["id"]):
             stage = STAGE_MAP.get(job.get("stage", ""))
-            if not stage or (stages and stage not in stages):
+            if not stage or (stages and stage not in stages) or job.get("status") not in FINISHED_JOB:
                 continue
-            run.add_evidence(stage, f"{job['name']} (pipeline #{pipeline['id']})", job["status"],
-                             job.get("web_url", ""))
+            run.add_evidence(stage, f"{job['name']} · {kind} #{pipeline['id']}", job["status"], job.get("web_url", ""))
 
     def _on_testing(self, run: Run) -> None:
         mr = self.gitlab.get_merge_request(run.mr_iid)
@@ -471,9 +488,20 @@ class Orchestrator:
             self._label(run, add=[LABELS["shipped"]], remove=[LABELS["running"]])
             run.move(RunState.SHIPPED, "release pipeline green: staging, production and monitoring passed")
         elif failed_jobs or status in ("failed", "canceled"):
+            retried = run.extra.setdefault("retried_jobs", [])
+            infra = [j for j in failed_jobs if j.get("failure_reason") in INFRA_FAILURES and j["name"] not in retried]
+            if infra and len(infra) == len(failed_jobs):
+                # The platform failed, not the change: retry once instead of rewinding a good release.
+                for job in infra:
+                    self.gitlab.retry_job(job["id"])
+                    retried.append(job["name"])
+                    run.note(f"{job['name']} hit a {job['failure_reason'].replace('_', ' ')} (GitLab infrastructure, "
+                             f"not this change); retried it")
+                return
             self._pipeline_evidence(run, pipeline)
-            names = ", ".join(j["name"] for j in failed_jobs) or status
-            self._rewind(run, f"release pipeline failed ({names})", {"pipeline_id": pipeline["id"],
+            names = ", ".join(f"{j['name']} ({(j.get('failure_reason') or 'failed').replace('_', ' ')})"
+                              for j in failed_jobs) or status
+            self._rewind(run, f"release pipeline failed: {names}", {"pipeline_id": pipeline["id"],
                                                                      "jobs": [j["name"] for j in failed_jobs]})
 
     def _on_rewinding(self, run: Run) -> None:

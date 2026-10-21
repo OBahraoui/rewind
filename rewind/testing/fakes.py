@@ -615,6 +615,16 @@ class FakeGitLab:
         return self.pipelines.get(pipeline_id)
 
     @locked
+    def retry_job(self, job_id: int) -> dict:
+        self._record("retry_job", job_id)
+        for jobs in self.jobs.values():
+            for j in jobs:
+                if j.get("id") == job_id:
+                    j.update(status="pending", failure_reason=None)
+                    return j
+        raise _nf(f"job {job_id}")
+
+    @locked
     def cancel_pipeline(self, pipeline_id: int) -> dict:
         self._record("cancel_pipeline", pipeline_id)
         self.pipelines[pipeline_id]["status"] = "canceled"

@@ -28,6 +28,10 @@ variables:
 
 default:
   interruptible: true
+  # Shared-runner hiccups (e.g. a rate-limited image pull) are the platform's fault, not the change's.
+  retry:
+    max: 2
+    when: [runner_system_failure, stuck_or_timeout_failure, scheduler_failure, api_failure, unknown_failure]
   cache:
     key: pip-$CI_JOB_NAME
     paths: [.cache/pip]

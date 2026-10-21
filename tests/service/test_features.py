@@ -346,3 +346,40 @@ def test_failed_agent_session_is_retried_once(orch, gl):
     finish_flow(gl, run, "develop", status="failed")  # the retry fails too: now the run stops
     run = orch.advance(run.id)
     assert run.state is RunState.FAILED and "developer flow ended with failed" in run.error
+
+
+def test_runner_failure_is_retried_not_rewound(orch, gl, cr):
+    issue = gl.add_issue("Promo pricing", labels=["rewind:auto"])
+    run = drive_to_merge(orch, gl, cr, orch.start_run(issue), issue)
+    jobs = [{"id": 901, "name": "build-image", "stage": "package", "status": "failed",
+             "failure_reason": "runner_system_failure"}]
+    pid = gl.add_pipeline("main", run.merge_sha, "failed", jobs=jobs)
+    run = orch.advance(run.id)
+    assert run.state is RunState.RELEASING and ("retry_job", (901,), {}) in gl.calls
+    assert "GitLab infrastructure" in run.timeline[-1].message
+    # The retry fails again for the same reason: now Rewind does rewind, and says why.
+    gl.jobs[pid][0].update(status="failed", failure_reason="runner_system_failure")
+    run = orch.advance(run.id)
+    assert run.state is RunState.REWOUND and "runner system failure" in run.extra["rewind_reason"]
+
+
+def test_checkpoint_waits_for_main_pipeline_to_finish(orch, gl):
+    pid = gl.add_pipeline("main", gl.branches["main"]["sha"], "running")
+    run = orch.start_run(gl.add_issue("Promo", labels=["rewind:auto"]))
+    assert run.state is RunState.QUEUED and run.checkpoint_id is None
+    assert "waiting for main pipeline" in run.timeline[-1].message
+    gl.set_pipeline_status(pid, "success")
+    run = orch.advance(run.id)
+    assert run.checkpoint_id and run.state is RunState.PLANNING
+
+
+def test_evidence_records_only_finished_jobs(orch, gl, cr):
+    issue = gl.add_issue("Promo pricing", labels=["rewind:auto"])
+    run = drive_to_merge(orch, gl, cr, orch.start_run(issue), issue)
+    jobs = [*release_jobs("failed"),
+            {"name": "release", "stage": "release", "status": "skipped"},
+            {"name": "deploy:production", "stage": "production", "status": "created"}]
+    gl.add_pipeline("main", run.merge_sha, "failed", jobs=jobs)
+    run = orch.advance(run.id)
+    assert not any(e.status in ("created", "skipped", "pending") for e in run.evidence)
+    assert any("release pipeline #" in e.name for e in run.evidence)
