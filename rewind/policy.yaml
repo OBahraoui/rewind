@@ -128,7 +128,7 @@ gate:
 
     - id: external-side-effect
       paths: ["app/**/*.py"]
-      added_must_not_match: '\b(requests|httpx|aiohttp|urllib\.request|smtplib|socket)\b|\bsend_(email|sms|notification)\b'
+      added_must_not_match: '\b(requests|httpx|aiohttp|urllib3?|urlopen|http\.client|smtplib|socket|boto3|grpc)\b|\bsend_(email|sms|notification)\b'
       verdict: block
       reason: "New code reaches an external system. Messages and calls that leave the system cannot be recalled."
 

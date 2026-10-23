@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from rewind.gate import added_lines, evaluate
 
 PRICING = '''from app import flags
@@ -100,3 +102,18 @@ def test_irreversible_state_change_and_blind_spots_block(engine, gl):
 def test_added_lines_tracks_line_numbers():
     diff = "--- a/x\n+++ b/x\n@@ -1,2 +1,3 @@\n a\n+b\n c\n@@ -10,1 +11,2 @@\n z\n+y\n"
     assert added_lines(diff) == [(2, "b"), (12, "y")]
+
+
+@pytest.mark.parametrize("code", [
+    "from urllib import request\n\n\ndef send(o):\n    request.urlopen('https://receipts.example.com')\n",
+    "import http.client\n",
+    "import requests\n",
+    "from httpx import post\n",
+    "import smtplib\n",
+    "import urllib3\n",
+])
+def test_every_common_way_to_call_out_is_caught(engine, gl, code):
+    b = base(gl)
+    head = gl.commit_files(f"agent-{abs(hash(code))}", {"app/receipts.py": code})
+    d = evaluate(engine.ctx, None, b, head)
+    assert d.verdict == "block" and d.findings[0].rule_id == "external-side-effect"
