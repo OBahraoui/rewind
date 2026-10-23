@@ -43,6 +43,9 @@ STAGES = ["plan", "create", "verify", "package", "secure", "release", "configure
 
 def status_text(run: Run) -> str:
     """The headline status, specific about what a queued run is waiting for."""
+    if run.state == RunState.QUEUED and run.extra.get("waiting_for_run"):
+        return (f"⏳ Waiting for run {run.extra['waiting_for_run']} (#{run.extra.get('waiting_for_run_issue', '?')}) "
+                f"to finish: runs go one at a time")
     if run.state == RunState.QUEUED and run.extra.get("waiting_for"):
         return (f"⏳ Waiting for pipeline #{run.extra['waiting_for']} on the default branch to finish, "
                 f"so the checkpoint starts from a stable state")

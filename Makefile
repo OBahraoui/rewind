@@ -36,6 +36,12 @@ demo-ship: ## Open the bulk-discount issue and follow the run (ships to producti
 demo-block: ## Open the email-receipt issue and follow the run (the gate blocks it)
 	$(PY) scripts/demo.py block --watch
 
+rerun: ## Start a fresh run for an issue and follow it: make rerun ISSUE=5
+	.venv/bin/rewind rerun $(ISSUE) --watch
+
+stop-all: ## Emergency brake: stop every run in progress (works even if the service is down)
+	CLOUDSDK_ACTIVE_CONFIG_NAME=rewind .venv/bin/rewind stop --all
+
 watch: ## Follow a run: make watch RUN=<run id or issue number>
 	.venv/bin/rewind watch $(RUN)
 
@@ -45,4 +51,4 @@ ship: ## Check, sync with GitLab, push and redeploy (refuses while a run is in p
 deploy: ## Redeploy the Rewind service only
 	CLOUDSDK_ACTIVE_CONFIG_NAME=rewind ./infra/deploy-rewind.sh
 
-.PHONY: help setup check property integration simulate screenshots doctor demo-rewind demo-ship demo-block watch ship deploy
+.PHONY: help setup check property integration simulate screenshots doctor demo-rewind demo-ship demo-block rerun stop-all watch ship deploy

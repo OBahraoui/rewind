@@ -436,3 +436,31 @@ def test_stop_halts_a_run_from_a_comment(orch, gl):
     # A stopped run is never advanced again.
     finish_flow(gl, run, "plan")
     assert orch.advance(run.id).state is RunState.FAILED
+
+
+def test_queued_run_says_which_run_it_waits_for(orch, gl):
+    from rewind import ledger
+
+    first = orch.start_run(gl.add_issue("A", labels=["rewind:auto"]))
+    second = orch.start_run(gl.add_issue("B", labels=["rewind:auto"]))
+    assert second.state is RunState.QUEUED and second.extra["waiting_for_run"] == first.id
+    assert f"Waiting for run {first.id} (#{first.issue_iid})" in ledger.status_text(second)
+
+
+def test_queued_run_times_out_instead_of_waiting_forever(orch, gl):
+    from datetime import timedelta
+
+    gl.add_pipeline("main", gl.branches["main"]["sha"], "pending")  # a pipeline that never runs
+    run = orch.start_run(gl.add_issue("A", labels=["rewind:auto"]))
+    run.state_since = run.state_since - timedelta(minutes=61)
+    orch.repo.save(run)
+    run = orch.advance(run.id)
+    assert run.state is RunState.FAILED and "waited over an hour for pipeline" in run.error
+    assert not any(c[0] == "start_workflow" for c in gl.calls)
+
+
+def test_a_run_locked_by_another_instance_is_left_alone(orch, gl):
+    run = orch.start_run(gl.add_issue("A", labels=["rewind:auto"]))
+    with orch.engine.store.lock(f"run-{run.id}", owner="other-instance"):
+        assert orch.advance(run.id) is None  # the other instance owns this run right now
+    assert orch.advance(run.id) is not None

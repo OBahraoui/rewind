@@ -14,8 +14,11 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import os
 import re
+import secrets
 import threading
+import time
 from datetime import timedelta
 from typing import Any
 
@@ -29,13 +32,17 @@ from rewind.models import ChangeSet, RewindReport, utcnow
 from rewind.resources.repository import REWIND_MARKER
 from rewind.runs import Approval, FlowRun, Run, RunState, gate_fingerprints, security_fingerprints
 from rewind.snapshot import diff as diff_snapshots
+from rewind.store import LockHeld
 from service import views
 from service.repo import RunRepository
 
 log = logging.getLogger("rewind.orchestrator")
 
+INSTANCE = f"{os.environ.get('K_REVISION', 'local')}-{secrets.token_hex(3)}"  # who holds a run lock
+
 # How long each state may last before the run stops waiting.
 TIMEOUTS = {
+    RunState.QUEUED: timedelta(minutes=60),
     RunState.PLANNING: timedelta(minutes=30),
     RunState.DEVELOPING: timedelta(minutes=60),
     RunState.REROUTING: timedelta(minutes=45),
@@ -129,14 +136,29 @@ class Orchestrator:
 
     @contextlib.contextmanager
     def _run_lock(self, run_id: str, blocking: bool = False):
+        """One writer per run: a thread lock in this process plus a lock in the shared store, because
+        during a deploy Cloud Run briefly runs the old and new instance side by side."""
         with self._guard:
             lock = self._locks.setdefault(run_id, threading.Lock())
         acquired = lock.acquire(blocking=blocking, timeout=60 if blocking else -1)
+        if not acquired:
+            yield False
+            return
         try:
-            yield acquired
+            with contextlib.ExitStack() as stack:
+                deadline = time.monotonic() + (60 if blocking else 0)
+                while True:
+                    try:
+                        stack.enter_context(self.engine.store.lock(f"run-{run_id}", ttl_s=180, owner=INSTANCE))
+                        break
+                    except LockHeld:
+                        if time.monotonic() >= deadline:
+                            yield False
+                            return
+                        time.sleep(1.0)
+                yield True
         finally:
-            if acquired:
-                lock.release()
+            lock.release()
 
     def advance(self, run_id: str) -> Run | None:
         with self._run_lock(run_id) as acquired:
@@ -179,6 +201,10 @@ class Orchestrator:
             run.move(RunState.MERGING, "merging the gated commit")
         elif run.state == RunState.RELEASING:
             self._rewind(run, "release pipeline did not finish in time; production state is unknown")
+        elif run.state == RunState.QUEUED:
+            waiting = (f"pipeline #{run.extra['waiting_for']}" if run.extra.get("waiting_for")
+                       else f"run {run.extra.get('waiting_for_run', 'ahead of it')}")
+            self._fail(run, f"waited over an hour for {waiting}; nothing was started. Re-label the issue to try again.")
         else:
             self._fail(run, f"timed out while {run.state.value}")
 
@@ -197,7 +223,14 @@ class Orchestrator:
     def _on_queued(self, run: Run) -> None:
         earlier = [r for r in self.repo.active() if r.id != run.id and r.created_at < run.created_at]
         if earlier:
-            return  # serialized: wait for the project's current run
+            # Serialized: one run at a time, so every change set belongs to exactly one run.
+            ahead = min(earlier, key=lambda r: r.created_at)
+            if run.extra.get("waiting_for_run") != ahead.id:
+                run.extra["waiting_for_run"] = ahead.id
+                run.extra["waiting_for_run_issue"] = ahead.issue_iid
+                run.note(f"waiting for run {ahead.id} (#{ahead.issue_iid}) to finish: runs go one at a time so "
+                         f"every change set belongs to exactly one run")
+            return
         if not run.checkpoint_id:
             recent = self.gitlab.list_pipelines(ref=self.default_branch)[:5]
             busy = [p for p in recent if p["status"] in ACTIVE_PIPELINE]

@@ -495,19 +495,93 @@ def watch(target: Annotated[str, typer.Argument(help="A run id, or an issue numb
 
 
 @app.command()
-def stop(run_id: str, by: Annotated[str, typer.Option(help="Your name, recorded in the ledger")] =
-         os.environ.get("USER", "")) -> None:
-    """Stop a run: Rewind gates, merges and releases nothing more from it."""
+def rerun(issue: Annotated[str, typer.Argument(help="Issue number, e.g. 5 or #5")],
+          follow: Annotated[bool, typer.Option("--watch", help="Follow the new run live")] = False) -> None:
+    """Start a fresh run for an issue (re-adds the trigger label, which is what Rewind listens for)."""
+    s = _settings()
+    s.require("gitlab_token", "project_id")
+    gl = GitLabClient(s.gitlab_url, s.gitlab_token, s.project_id)
+    iid = int(issue.lstrip("#"))
+    found = gl.get_issue(iid)
+    if not found:
+        typer.secho(f"no issue #{iid}", fg="red")
+        raise typer.Exit(1)
+    if found["state"] != "opened":
+        gl.update_issue(iid, state_event="reopen")
+    gl.update_issue(iid, remove_labels=s.trigger_label)
+    time.sleep(1.5)  # two separate webhook events: removed, then added
+    gl.update_issue(iid, add_labels=s.trigger_label)
+    typer.secho(f"✓ re-labelled #{iid} {found['title']}: Rewind starts a new run", fg="green")
+    if follow:
+        time.sleep(3)
+        watch(str(iid))
+
+
+def _local_orchestrator(store_url: str):
+    """The service's orchestrator, run from this machine against the service's own store and GitLab.
+    The emergency brake: it works when the service is down or older than this code."""
+    from rewind.flows import Flows
+    from service.orchestrator import Orchestrator
+    from service.repo import RunRepository
+
+    s = _settings()
+    eng = _engine(s)
+    eng.store = open_store(store_url)
+    repo = RunRepository(eng.store, s.project_id)
+    return Orchestrator(s, eng, repo, Flows(eng.ctx.gitlab, s.project_id, s.flows, eng.ctx.policy))
+
+
+@app.command()
+def stop(run_id: Annotated[str, typer.Argument(help="Run to stop (omit with --all)")] = "",
+         all_: Annotated[bool, typer.Option("--all", help="Stop every run that hasn't finished")] = False,
+         direct: Annotated[bool, typer.Option(help="Skip the service; act on its store directly")] = False,
+         by: Annotated[str, typer.Option(help="Your name, recorded in the ledger")] = os.environ.get("USER", ""),
+         ) -> None:
+    """Stop runs: Rewind gates, merges and releases nothing more from them.
+
+    Uses the service's API; if the service is unreachable or too old, it stops the runs directly in
+    the service's store (gs://$GCS_BUCKET), so the brake works even when the service doesn't.
+    """
     import httpx
 
     s = _settings()
-    s.require("public_url", "api_token")
-    resp = httpx.post(f"{s.public_url}/api/runs/{run_id}/stop", params={"by": by},
-                      headers={"Authorization": f"Bearer {s.api_token}"}, timeout=60)
-    if resp.status_code >= 400:
-        typer.secho(f"✗ {resp.status_code}: {resp.json().get('detail', resp.text)}", fg="red")
-        raise typer.Exit(1)
-    typer.secho(f"✓ stopped run {run_id}", fg="green", bold=True)
+    bucket = os.environ.get("GCS_BUCKET", "")
+    store_url = f"gs://{bucket}" if bucket else s.store_url
+    targets = [run_id] if run_id else []
+    if all_:
+        try:
+            runs = httpx.get(f"{s.public_url}/api/runs", timeout=30).json() if s.public_url and not direct else None
+        except httpx.HTTPError:
+            runs = None
+        if runs is None:
+            from service.repo import RunRepository
+
+            runs = RunRepository(open_store(store_url), s.project_id).summaries()
+        targets = [r["id"] for r in runs if r["state"] not in ("shipped", "rewound", "blocked", "failed")]
+    if not targets:
+        typer.secho("nothing to stop: no run is in progress" if all_ else "give a run id or --all", fg="yellow")
+        raise typer.Exit(0 if all_ else 2)
+
+    orch = None
+    for rid in targets:
+        if not direct and s.public_url and s.api_token:
+            try:
+                resp = httpx.post(f"{s.public_url}/api/runs/{rid}/stop", params={"by": by},
+                                  headers={"Authorization": f"Bearer {s.api_token}"}, timeout=60)
+                if resp.status_code < 400:
+                    typer.secho(f"✓ stopped {rid} (via the service)", fg="green")
+                    continue
+                if resp.status_code == 409:
+                    typer.secho(f"- {rid}: {resp.json().get('detail')}", fg="yellow")
+                    continue
+            except httpx.HTTPError:
+                pass
+        orch = orch or _local_orchestrator(store_url)
+        try:
+            orch.stop(rid, by=by or "cli")
+            typer.secho(f"✓ stopped {rid} (directly in {store_url})", fg="green")
+        except ValueError as exc:
+            typer.secho(f"- {rid}: {exc}", fg="yellow")
 
 
 @app.command()
