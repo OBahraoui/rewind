@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Reversibility policy · Rewind{% endblock %}
+{% block description %}What Rewind lets agents do hands-off, what it neutralises, and what it stops.{% endblock %}
+{% block content %}
+<div class="stack">
+  <section class="hero">
+    <span class="eyebrow">Governance</span>
+    <h1>Reversibility policy</h1>
+    <p class="lede">Autonomy is set by reversibility, not by a fixed approval level. This is the policy in force for this
+      project, read live from <code>rewind/policy.yaml</code>. Agents may not edit it: it is a protected path.</p>
+  </section>
+
+  <section aria-labelledby="classes-h">
+    <header><h2 id="classes-h">How every change is classified</h2><span class="muted small">first matching rule wins · unknown changes fail closed</span></header>
+    <div class="rules">
+      {% for cls, rules in classify.items() %}
+      <div class="card rule">
+        <header style="display:flex;align-items:center;gap:10px;margin-bottom:8px">{{ m.badge(class_badges[cls]) }}<span class="muted small">{{ class_help[cls] }}</span></header>
+        <ul class="list">
+          {% for r in rules %}
+          <li><div class="grow"><span class="k">{% if r.kind == "*" %}any other change{% else %}{{ r.kind }}{% endif %}{% if r.op != "*" %} · {{ r.op }}{% endif %}{% if r.fields_any %} · {{ r.fields_any | join(", ") }} changed{% endif %}{% if r.after %} · when {{ r.after | conds }}{% endif %}{% if r.before %} · when it was {{ r.before | conds }}{% endif %}</span><p>{{ r.reason }}</p></div></li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section aria-labelledby="gate-h">
+    <header><h2 id="gate-h">The gate, before merge</h2><span class="muted small">runs on the exact commit that would ship · also a <a href="{{ project_url }}/-/blob/main/templates/gate.yml">CI/CD component</a></span></header>
+    <div class="rules">
+      {% for r in gate.rules %}
+      <div class="card rule">
+        {{ m.badge(gate_badges[r.verdict]) }} <b class="mono small">{{ r.id }}</b>
+        <div class="k" style="margin-top:6px">{{ r.paths | join(", ") }}</div>
+        <p>{{ r.reason }}</p>
+        {% if r.instruction %}<p class="muted">What the agent is told to do instead: {{ r.instruction | replace("`", "") }}</p>{% endif %}
+      </div>
+      {% endfor %}
+      <div class="card rule">
+        {{ m.badge(gate_badges["block"]) }} <b class="mono small">protected-path</b>
+        <p>Agents may not change their own guardrails or the delivery pipeline:</p>
+        <div class="chips" style="margin-top:8px">{% for p in gate.protected_paths %}<code>{{ p }}</code>{% endfor %}</div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="priv-h">
+    <header><h2 id="priv-h">Agent privileges, per step</h2><span class="muted small">least privilege · never granted: {{ privileges.never | join(", ") }}</span></header>
+    <div class="card table-wrap"><table class="table">
+      <thead><tr><th scope="col">Step</th><th scope="col">Privileges</th></tr></thead>
+      <tbody>{% for step, privs in privileges.steps.items() %}
+        <tr><td><b style="text-transform:capitalize">{{ step }}</b></td><td><div class="chips">{% for p in privs %}<span class="chip">{{ p }}</span>{% endfor %}</div></td></tr>
+      {% endfor %}</tbody>
+    </table></div>
+  </section>
+
+  <section aria-labelledby="trust-h" class="card card-pad">
+    <header><h2 id="trust-h">Who can do what</h2></header>
+    <dl class="kv">
+      <dt>Undo a run</dt><dd>Any project member with Developer or higher: comment <code>/rewind</code>. Undo is safe and can itself be undone.</dd>
+      <dt>Stop a run</dt><dd>Same: comment <code>/rewind stop</code>. Stopping only removes autonomy.</dd>
+      <dt>Accept the irreversible</dt><dd>Only through Rewind's authenticated API (<code>rewind approve</code>), never a comment: agents comment with your identity. Bound to one commit and to the findings shown.</dd>
+    </dl>
+  </section>
+</div>
+{% endblock %}

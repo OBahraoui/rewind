@@ -443,6 +443,58 @@ def approve(run_id: str,
 
 
 @app.command()
+def watch(target: Annotated[str, typer.Argument(help="A run id, or an issue number like 2 or #2")],
+          interval: Annotated[float, typer.Option(help="Seconds between checks")] = 5.0) -> None:
+    """Follow a run live: every step as it happens, then the outcome and links."""
+    import httpx
+
+    s = _settings()
+    s.require("public_url")
+    api = httpx.Client(base_url=s.public_url, timeout=30)
+
+    def find() -> str | None:
+        if target.startswith("run_"):
+            return target
+        iid = int(target.lstrip("#"))
+        for r in api.get("/api/runs").json():
+            if r["issue_iid"] == iid:
+                return r["id"]
+        return None
+
+    run_id, seen, waited = find(), 0, 0.0
+    while run_id is None:  # the webhook may not have created the run yet
+        if waited > 120:
+            typer.secho(f"no run for {target} after 2 minutes; is the issue labelled?", fg="red")
+            raise typer.Exit(1)
+        time.sleep(interval)
+        waited += interval
+        run_id = find()
+    typer.secho(f"⟲ following {run_id} · {s.public_url}/runs/{run_id}", bold=True)
+    terminal = {"shipped": "green", "rewound": "magenta", "blocked": "red", "failed": "red"}
+    while True:
+        try:
+            run = api.get(f"/api/runs/{run_id}").json()["run"]
+        except (httpx.HTTPError, KeyError, ValueError) as exc:
+            typer.secho(f"  (service unreachable: {exc}; retrying)", fg="yellow")
+            time.sleep(interval)
+            continue
+        for ev in run["timeline"][seen:]:
+            typer.echo(f"  {ev['at'][11:19]}  {ev['state']:<11} {ev['message']}")
+        seen = len(run["timeline"])
+        if run["state"] in terminal:
+            typer.secho(f"\n{run['state'].upper()}", fg=terminal[run["state"]], bold=True)
+            for label, value in (("merge request", run.get("mr_url")), ("incident", run.get("incident_url")),
+                                 ("release pipeline", run.get("release_pipeline_url")),
+                                 ("dashboard", f"{s.public_url}/runs/{run_id}")):
+                if value:
+                    typer.echo(f"  {label}: {value}")
+            if run.get("error"):
+                typer.echo(f"  reason: {run['error']}")
+            return
+        time.sleep(interval)
+
+
+@app.command()
 def stop(run_id: str, by: Annotated[str, typer.Option(help="Your name, recorded in the ledger")] =
          os.environ.get("USER", "")) -> None:
     """Stop a run: Rewind gates, merges and releases nothing more from it."""

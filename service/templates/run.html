@@ -1,128 +1,171 @@
 {% extends "base.html" %}
-{% block title %}Rewind · run {{ run.id }}{% endblock %}
-{% block head %}{% if not run.state.terminal %}<meta http-equiv="refresh" content="5">{% endif %}{% endblock %}
+{% block title %}#{{ run.issue_iid }} {{ run.issue_title }} · Rewind{% endblock %}
+{% block description %}{{ status }}: run {{ run.id }} for issue #{{ run.issue_iid }}.{% endblock %}
 {% block content %}
-<p><a href="/">← all runs</a></p>
-<section class="hero">
-  <h1><a href="{{ run.issue_url }}">#{{ run.issue_iid }}</a> {{ run.issue_title }}</h1>
-  <p class="state big s-{{ run.state.value }}">{{ status }}</p>
-  {% if run.error %}<p class="error">{{ run.error }}</p>{% endif %}
-  {% if not run.state.terminal %}<p class="live">● live: refreshing every 5s</p>{% endif %}
-</section>
-<section class="facts">
-  <div><span class="l">Run</span><code>{{ run.id }}</code></div>
-  <div><span class="l">Checkpoint</span><code>{{ run.checkpoint_id or '—' }}</code></div>
-  <div><span class="l">Merge request</span>{% if run.mr_iid %}<a href="{{ run.mr_url }}">!{{ run.mr_iid }}</a>{% else %}—{% endif %}</div>
-  <div><span class="l">Gated commit</span><code>{{ run.gated_sha[:8] or '—' }}</code></div>
-  <div><span class="l">Release pipeline</span>{% if run.release_pipeline_id %}<a href="{{ run.release_pipeline_url }}">#{{ run.release_pipeline_id }}</a>{% else %}—{% endif %}</div>
-  <div><span class="l">Rewind</span><code>{{ run.rewind_id or '—' }}</code></div>
-  <div><span class="l">Incident</span>{% if run.incident_iid %}<a href="{{ run.incident_url }}">#{{ run.incident_iid }}</a>{% else %}—{% endif %}</div>
-</section>
-
-{% if run.flows %}
-<section>
-  <h2>Agent sessions</h2>
-  <div class="table-wrap"><table>
-    <thead><tr><th>Step</th><th>Duo session</th><th>Status</th><th>Step checkpoint (undo only what came after)</th></tr></thead>
-    <tbody>{% for f in run.flows %}
-      <tr><td>{{ f.step }}</td><td>{% if f.web_url %}<a href="{{ f.web_url }}">#{{ f.workflow_id }}</a>{% else %}#{{ f.workflow_id }}{% endif %}</td>
-      <td>{{ f.status }}</td><td>{% if f.checkpoint_id %}<code>rewind to {{ f.checkpoint_id }}</code>{% else %}—{% endif %}</td></tr>
-    {% endfor %}</tbody>
-  </table></div>
-</section>
-{% endif %}
-
-{% if run.approvals %}
-<section>
-  <h2>Human approvals</h2>
-  <ul class="findings">{% for a in run.approvals %}
-    <li><strong>{{ a.by }}</strong> accepted the risk for <code>{{ a.sha[:8] }}</code> — {{ a.reason }} <span class="muted">({{ a.at.strftime('%Y-%m-%d %H:%M') }} UTC)</span></li>
-  {% endfor %}</ul>
-</section>
-{% endif %}
-
-{% if run.security_findings %}
-<section>
-  <h2>Security findings this change introduced</h2>
-  <ul class="findings">{% for f in run.security_findings %}
-    <li><span class="pill c-irreversible">{{ f.severity }}</span> {{ f.name }} <code>{{ f.file }}{% if f.line %}:{{ f.line }}{% endif %}</code></li>
-  {% endfor %}</ul>
-</section>
-{% endif %}
-
-<section>
-  <h2>Lifecycle</h2>
-  {% set covered = run.evidence | map(attribute='stage') | list %}
-  <ol class="stages">
-  {% for s in stages %}<li class="{{ 'on' if s in covered else '' }}">{{ s }}</li>{% endfor %}
-  </ol>
-  {% if run.evidence %}
-  <div class="table-wrap"><table>
-    <thead><tr><th>Stage</th><th>Evidence</th><th>Status</th></tr></thead>
-    <tbody>{% for e in run.evidence | sort(attribute='stage') %}
-      <tr><td>{{ e.stage }}</td><td>{% if e.url %}<a href="{{ e.url }}">{{ e.name }}</a>{% else %}{{ e.name }}{% endif %}</td><td>{{ e.status }}</td></tr>
-    {% endfor %}</tbody>
-  </table></div>
-  {% endif %}
-</section>
-
-{% if run.gate %}
-<section>
-  <h2>Reversibility gate <span class="pill g-{{ run.gate.verdict }}">{{ run.gate.verdict }}</span></h2>
-  {% if not run.gate.findings %}<p class="muted">Everything this change ships can be undone by Rewind.</p>{% endif %}
-  <ul class="findings">
-  {% for f in run.gate.findings %}
-    <li><strong>{{ f.rule_id }}</strong>{% if f.path %} <code>{{ f.path }}{% if f.line %}:{{ f.line }}{% endif %}</code>{% endif %} — {{ f.message }}
-      {% if f.evidence %}<pre>{{ f.evidence }}</pre>{% endif %}</li>
-  {% endfor %}
-  </ul>
-</section>
-{% endif %}
-
-{% if change_set %}
-<section>
-  <h2>Change set <span class="muted">({{ change_set.changes | length }} since <code>{{ change_set.checkpoint_id }}</code>)</span></h2>
-  <div class="groups">
-  {% for cls, items in groups.items() %}
-    <div class="group c-{{ cls.value }}">
-      <h3>{{ cls.value }} <span class="muted">{{ items | length }}</span></h3>
-      <ul>{% for c in items %}<li>{{ c.summary }}{% if run.provenance.get(c.id) %}<br><span class="by">by {% for who in run.provenance[c.id] %}{% if who[1] %}<a href="{{ who[1] }}">{{ who[0] }}</a>{% else %}{{ who[0] }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</span>{% endif %}</li>{% else %}<li class="muted">none</li>{% endfor %}</ul>
+<div class="stack" {% if not run.state.terminal %}data-live="/api/runs/{{ run.id }}/version" data-version="{{ run.updated_at | iso }}"{% endif %}>
+  <section class="run-head">
+    <p class="small"><a href="/">← All runs</a></p>
+    <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+      {{ m.badge(badges[run.state.value], "" if run.state.terminal else "live") }}
+      {% if not run.state.terminal %}<span class="live-dot">Live · <span data-since="{{ run.created_at | iso }}">running</span></span>{% endif %}
     </div>
-  {% endfor %}
-  </div>
-</section>
-{% endif %}
-
-{% if report %}
-<section>
-  <h2>⏪ Rewind <code>{{ report.id }}</code></h2>
-  <section class="tiles">
-    {% if report.mitigated_after_s is not none %}
-    <div class="tile"><span class="n">{{ '%.1f' % report.mitigated_after_s }}s</span><span class="l">to mitigate production</span></div>
-    {% else %}
-    <div class="tile"><span class="n">—</span><span class="l">production never changed</span></div>
-    {% endif %}
-    <div class="tile"><span class="n">{{ '%.1f' % (report.finished_at - report.started_at).total_seconds() if report.finished_at else '—' }}s</span><span class="l">to restore everything</span></div>
-    <div class="tile {{ 'ok' if report.zero_drift else 'bl' }}"><span class="n">{{ 'zero' if report.zero_drift else report.verification.drift | length if report.verification else '?' }}</span><span class="l">drift after verification</span></div>
+    <h1>{% if run.issue_url %}<a href="{{ run.issue_url }}" style="color:inherit">#{{ run.issue_iid }}</a>{% else %}#{{ run.issue_iid }}{% endif %} {{ run.issue_title }}</h1>
+    <div class="meta">
+      <span>Run <b class="mono">{{ run.id }}</b></span>
+      {% if run.checkpoint_id %}<span>Checkpoint <b class="mono">{{ run.checkpoint_id }}</b></span>{% endif %}
+      {% if run.mr_iid %}<span>Merge request <a href="{{ run.mr_url }}">!{{ run.mr_iid }}</a></span>{% endif %}
+      {% if run.release_pipeline_id %}<span>Release <a href="{{ run.release_pipeline_url }}">#{{ run.release_pipeline_id }}</a></span>{% endif %}
+      {% if run.incident_iid %}<span>Incident <a href="{{ run.incident_url }}">#{{ run.incident_iid }}</a></span>{% endif %}
+      <span>Started <span data-ago="{{ run.created_at | iso }}">{{ run.created_at | ago }}</span></span>
+    </div>
   </section>
-  <div class="table-wrap"><table>
-    <thead><tr><th>#</th><th>Inverse</th><th>Outcome</th><th>Detail</th><th>ms</th></tr></thead>
-    <tbody>{% for s in report.steps %}
-      <tr><td>{{ loop.index }}</td><td>{{ s.action }}</td><td><span class="pill o-{{ s.outcome.value }}">{{ s.outcome.value }}</span></td><td class="muted">{{ s.detail }}</td><td>{{ s.duration_ms }}</td></tr>
-    {% endfor %}</tbody>
-  </table></div>
-  {% if report.verification and report.verification.drift %}
-  <h3>Drift</h3><ul>{% for d in report.verification.drift %}<li>{{ d }}</li>{% endfor %}</ul>
-  {% endif %}
-</section>
-{% endif %}
 
-<section>
-  <h2>Timeline</h2>
-  <ol class="timeline">
-  {% for ev in run.timeline %}
-    <li><time>{{ ev.at.strftime('%H:%M:%S') }}</time> <span class="state s-{{ ev.state }}">{{ ev.state }}</span> {{ ev.message }}</li>
-  {% endfor %}
-  </ol>
-</section>
+  {% if run.error %}
+  <div class="alert tone-critical" role="status">{{ m.badge(badges[run.state.value]) }}<span>{{ run.error }}</span></div>
+  {% elif run.state.value == "queued" %}
+  <div class="alert tone-info" role="status"><span aria-hidden="true">◷</span><span>{{ status }}</span></div>
+  {% endif %}
+
+  <section class="card card-pad" aria-labelledby="track-h">
+    <header><h2 id="track-h">The run</h2>{% if not run.error %}<span class="muted small">{{ run.timeline[-1].message if run.timeline else "" }}</span>{% endif %}</header>
+    {{ m.run_track(track) }}
+  </section>
+
+  <section aria-labelledby="stages-h">
+    <header><h2 id="stages-h">DevSecOps lifecycle</h2><span class="muted small">{{ covered }} of 9 stages with evidence</span></header>
+    {{ m.stages_strip(stages, run.evidence) }}
+  </section>
+
+  <div class="grid-2">
+    <div class="stack">
+      {% if report %}
+      <section class="card card-pad" aria-labelledby="rw-h">
+        <header><h2 id="rw-h">⟲ Rewind <span class="mono muted small">{{ report.id }}</span></h2>
+          <span class="muted small">{{ report.reason }}</span></header>
+        <div class="kpis">
+          <div class="tile" style="padding:0"><span class="label">Production mitigated</span>
+            <span class="value">{% if report.mitigated_after_s is not none %}{{ report.mitigated_after_s | duration }}{% else %}—{% endif %}</span>
+            <span class="context">{% if report.mitigated_after_s is not none %}traffic and flags back{% else %}production never changed{% endif %}</span></div>
+          <div class="tile" style="padding:0"><span class="label">Everything restored</span>
+            <span class="value">{{ total_s | duration }}</span><span class="context">{{ report.steps | length }} undo steps</span></div>
+          <div class="tile" style="padding:0"><span class="label">Verification</span>
+            <span class="value">{% if report.zero_drift %}Zero drift{% else %}{{ report.verification.drift | length if report.verification else "?" }} drift{% endif %}</span>
+            <span class="context">compared with the checkpoint again</span></div>
+        </div>
+        {% if timeline %}{{ m.rewind_chart(timeline) }}{% endif %}
+        <details class="disclosure" open>
+          <summary>Undo steps, in the order Rewind ran them</summary>
+          <div class="table-wrap"><table class="table">
+            <thead><tr><th scope="col">#</th><th scope="col">Undo</th><th scope="col">Outcome</th><th scope="col" class="hide-sm">Detail</th><th scope="col" class="num">Time</th></tr></thead>
+            <tbody>{% for s in report.steps %}
+              <tr><td class="num muted">{{ loop.index }}</td><td>{{ s.action }}</td><td>{{ m.badge(outcome_badges[s.outcome]) }}</td>
+                <td class="hide-sm muted small">{{ s.detail }}</td><td class="num">{{ (s.duration_ms / 1000) | duration }}</td></tr>
+            {% endfor %}</tbody>
+          </table></div>
+        </details>
+        {% if report.verification and report.verification.drift %}
+        <div class="alert tone-warning" style="margin-top:12px"><span aria-hidden="true">!</span><div><b>Drift</b><ul>{% for d in report.verification.drift %}<li>{{ d }}</li>{% endfor %}</ul></div></div>
+        {% endif %}
+        <p class="muted small" style="margin-top:12px">This rewind can itself be undone: <code>rewind undo-last</code> restores the pre-rewind checkpoint <code>{{ report.pre_rewind_checkpoint_id }}</code>.</p>
+      </section>
+      {% endif %}
+
+      {% if run.gate %}
+      <section class="card card-pad" aria-labelledby="gate-h">
+        <header><h2 id="gate-h">Reversibility gate</h2>{{ m.badge(gate_badges[run.gate.verdict]) }}</header>
+        <p class="muted small">Checked <code>{{ run.gate.head_sha[:8] }}</code> · {{ run.gate.files_checked | length }} file(s) · before merge, on the exact commit that would ship.</p>
+        <div style="margin-top:12px">
+        {% for f in run.gate.findings %}
+          <div class="finding">
+            {{ m.badge(gate_badges["block" if f.verdict == "block" else "reroute"]) }} <b class="mono small">{{ f.rule_id }}</b>
+            {% if f.path %}<span class="mono small muted">{{ f.path }}{% if f.line %}:{{ f.line }}{% endif %}</span>{% endif %}
+            <p style="margin-top:6px">{{ f.message }}</p>
+            {% if f.evidence %}<pre>{{ f.evidence }}</pre>{% endif %}
+            {% if f.instruction %}<p class="small muted" style="margin-top:6px">How to make it undoable: {{ f.instruction }}</p>{% endif %}
+          </div>
+        {% else %}
+          <p>✓ Everything this change ships can be undone by Rewind.</p>
+        {% endfor %}
+        </div>
+      </section>
+      {% endif %}
+
+      {% if change_set %}
+      <section class="card card-pad" aria-labelledby="cs-h">
+        <header><h2 id="cs-h">Change set</h2><span class="muted small">{{ change_set.changes | length }} change(s) since <code>{{ change_set.checkpoint_id }}</code></span></header>
+        {% for cls, items in groups.items() %}
+        <div class="class-group">
+          <header>{{ m.badge(class_badges[cls]) }}<span class="muted small">{{ items | length }} · {{ class_help[cls] }}</span></header>
+          <ul class="list">
+            {% for c in items %}
+            <li><div class="grow">{{ c.summary }}
+              {% if run.provenance.get(c.id) %}<span class="by">by {% for who in run.provenance[c.id] %}{% if who[1] %}<a href="{{ who[1] }}">{{ who[0] }}</a>{% else %}{{ who[0] }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</span>{% endif %}
+            </div></li>
+            {% else %}<li class="muted small">None</li>{% endfor %}
+          </ul>
+        </div>
+        {% endfor %}
+      </section>
+      {% endif %}
+
+      <section aria-labelledby="ev-h" class="card card-pad">
+        <header><h2 id="ev-h">Evidence</h2><span class="muted small">what proves each stage</span></header>
+        {% if run.evidence %}
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th scope="col">Stage</th><th scope="col">Evidence</th><th scope="col">Status</th></tr></thead>
+          <tbody>{% for e in run.evidence | sort(attribute="stage") %}
+            <tr><td class="small" style="text-transform:capitalize">{{ e.stage }}</td>
+              <td>{% if e.url %}<a href="{{ e.url }}">{{ e.name }}</a>{% else %}{{ e.name }}{% endif %}</td>
+              <td class="small">{{ e.status }}</td></tr>
+          {% endfor %}</tbody>
+        </table></div>
+        {% else %}<p class="muted">Evidence appears here as the run moves through the lifecycle.</p>{% endif %}
+      </section>
+    </div>
+
+    <aside class="aside" aria-label="Run details">
+      {% if run.flows %}
+      <section class="card card-pad" aria-labelledby="ag-h">
+        <header><h3 id="ag-h">Agent sessions</h3></header>
+        <ul class="list">
+          {% for f in run.flows %}
+          <li><div class="grow"><b style="text-transform:capitalize">{{ f.step }}</b>
+            {% if f.web_url %}<a class="mono small" href="{{ f.web_url }}">#{{ f.workflow_id }}</a>{% else %}<span class="mono small">#{{ f.workflow_id }}</span>{% endif %}
+            {% if f.attempt > 1 %}<span class="muted small">· retry</span>{% endif %}
+            <span class="by">{{ f.status }}{% if f.checkpoint_id %} · to undo only what came after:{% endif %}</span>
+            {% if f.checkpoint_id %}<code class="cmd" title="rewind to {{ f.checkpoint_id }}">rewind to {{ f.checkpoint_id }}</code>{% endif %}</div></li>
+          {% endfor %}
+        </ul>
+      </section>
+      {% endif %}
+
+      {% if run.approvals %}
+      <section class="card card-pad" aria-labelledby="ap-h">
+        <header><h3 id="ap-h">Human approvals</h3></header>
+        <ul class="list">{% for a in run.approvals %}
+          <li><div class="grow"><b>{{ a.by }}</b> accepted the risk for <code>{{ a.sha[:8] }}</code><span class="by">{{ a.reason }} · {{ a.at.strftime('%d %b %H:%M') }} UTC</span></div></li>
+        {% endfor %}</ul>
+      </section>
+      {% endif %}
+
+      {% if run.security_findings %}
+      <section class="card card-pad" aria-labelledby="sec-h">
+        <header><h3 id="sec-h">Security findings this change introduced</h3></header>
+        <ul class="list">{% for f in run.security_findings %}
+          <li>{{ m.badge(outcome_badges["failed"] if f.severity in ("Critical", "High") else outcome_badges["conflict"], "") }}<div class="grow">{{ f.name }}<span class="by mono">{{ f.file }}{% if f.line %}:{{ f.line }}{% endif %}</span></div></li>
+        {% endfor %}</ul>
+      </section>
+      {% endif %}
+
+      <section class="card card-pad" aria-labelledby="tl-h">
+        <header><h3 id="tl-h">Timeline</h3></header>
+        <ol class="events">
+          {% for ev in run.timeline %}
+          <li class="k-{{ ev.state }}"><time datetime="{{ ev.at | iso }}">{{ ev.at.strftime('%H:%M:%S') }} · {{ ev.state }}</time>{{ ev.message }}</li>
+          {% endfor %}
+        </ol>
+      </section>
+    </aside>
+  </div>
+</div>
 {% endblock %}

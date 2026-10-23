@@ -28,6 +28,9 @@ class RunRepository:
                 "checkpoint_id": run.checkpoint_id, "mr_iid": run.mr_iid, "rewind_id": run.rewind_id,
                 "merge_sha": run.merge_sha, "counts": run.change_counts,
                 "gate": run.gate.verdict if run.gate else None,
+                "issue_url": run.issue_url, "mr_url": run.mr_url, "incident_iid": run.incident_iid,
+                "error": run.error, "rewind": run.extra.get("rewind_summary"),
+                "flows": len(run.flows),
             }
             self.store.put(f"{self.prefix}/index.json", index)
 

@@ -56,10 +56,12 @@ Push to the default branch. The pipeline deploys the demo app to staging and pro
 
 ## 6. Rehearse (each run costs credits: budget ~3–4 flows per run)
 ```bash
-python scripts/demo.py rewind    # do this FIRST on a fresh state: new_pricing must be off in production
-python scripts/demo.py ship
-python scripts/demo.py block
+make demo-rewind   # do this FIRST on a fresh state: new_pricing must be off in production
+make demo-ship
+make demo-block
 ```
+Each one opens the issue and follows the run live in your terminal until it finishes. To ship
+changes to Rewind itself, use `make ship`: it refuses while a run is in progress.
 ✅ Rewind scenario: ledger shows **zero drift**, production serves the checkpoint revision,
 `new_pricing` is off, issue reopened. Ship scenario: release created. Block scenario: `rewind:blocked`.
 

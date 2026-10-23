@@ -1,48 +1,93 @@
 {% extends "base.html" %}
 {% block title %}Rewind · {{ project }}{% endblock %}
-{% block head %}{% if stats.active %}<meta http-equiv="refresh" content="10">{% endif %}{% endblock %}
 {% block content %}
-<section class="hero">
-  <h1>{{ project }}</h1>
-  <p class="muted">Every autonomous run, checkpointed before agents act, gated by reversibility, and undoable in one command.</p>
-</section>
-<section class="tiles">
-  <div class="tile"><span class="n">{{ stats.runs }}</span><span class="l">runs</span></div>
-  <div class="tile ok"><span class="n">{{ stats.shipped }}</span><span class="l">shipped hands-off</span></div>
-  <div class="tile rw"><span class="n">{{ stats.rewound }}</span><span class="l">rewound</span></div>
-  <div class="tile bl"><span class="n">{{ stats.blocked }}</span><span class="l">blocked by the gate</span></div>
-  <div class="tile"><span class="n">{{ stats.flows_today }}<small>/{{ stats.flow_limit }}</small></span><span class="l">agent flows today (credit guard)</span></div>
-</section>
-{% if stats.active %}<p class="live">● live: refreshing every 10s while a run is active</p>{% endif %}
-<section>
-  <h2>Runs</h2>
-  {% if not runs %}<p class="muted">No runs yet. Label an issue <code>rewind:auto</code> to start one.</p>{% else %}
-  <div class="table-wrap"><table>
-    <thead><tr><th>Issue</th><th>Status</th><th>Gate</th><th>Change set</th><th>Checkpoint</th><th>Updated</th></tr></thead>
-    <tbody>
-    {% for r in runs %}
-      <tr>
-        <td><a href="/runs/{{ r.id }}">#{{ r.issue_iid }} {{ r.issue_title }}</a></td>
-        <td><span class="state s-{{ r.state }}">{{ status[r.state] }}</span></td>
-        <td>{% if r.gate %}<span class="pill g-{{ r.gate }}">{{ r.gate }}</span>{% else %}—{% endif %}</td>
-        <td class="counts">
-          {% if r.counts %}
-          <span class="pill c-reversible" title="reversible">{{ r.counts.get('reversible', 0) }}</span>
-          <span class="pill c-compensatable" title="compensatable">{{ r.counts.get('compensatable', 0) }}</span>
-          <span class="pill c-irreversible" title="irreversible">{{ r.counts.get('irreversible', 0) }}</span>
-          {% else %}—{% endif %}
-        </td>
-        <td><code>{{ r.checkpoint_id or '—' }}</code></td>
-        <td class="muted">{{ r.updated_at[:19].replace('T', ' ') }}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table></div>
-  {% endif %}
-</section>
-<section class="legend">
-  <span class="pill c-reversible">reversible</span> restored exactly
-  <span class="pill c-compensatable">compensatable</span> neutralised by a recorded action
-  <span class="pill c-irreversible">irreversible</span> gated, never "undone"
-</section>
+<div class="stack" {% if ov.active %}data-live="/api/version" data-version="{{ version }}" data-interval="5000"{% endif %}>
+  <section class="hero">
+    <span class="eyebrow">{% if ov.active %}<span class="live-dot">Live · a run is in progress</span>{% else %}Control room{% endif %}</span>
+    <h1>Agents ship to production.<br>Rewind keeps every change undoable.</h1>
+    <p class="lede">Every run is checkpointed before agents act, gated by reversibility before merge, and undone as one
+      change set if production regresses. Then Rewind proves it: the project is compared with the checkpoint again.</p>
+  </section>
+
+  <section aria-label="Key numbers">
+    <div class="tiles">
+      <div class="card tile">
+        <span class="label">Hands-off runs</span>
+        <span class="value">{{ ov.runs }}</span>
+        <span class="context">{{ ov.shipped }} shipped · {{ ov.rewound }} rewound · {{ ov.blocked }} blocked</span>
+      </div>
+      <div class="card tile">
+        <span class="label">Rewinds with zero drift</span>
+        <span class="value">{{ ov.zero_drift }}<small>/ {{ ov.rewinds }}</small></span>
+        <span class="context">verified against the checkpoint</span>
+      </div>
+      <div class="card tile">
+        <span class="label">Fastest production mitigation</span>
+        <span class="value">{{ ov.fastest_mitigation_s | duration }}</span>
+        <span class="context">traffic and flags back to the checkpoint</span>
+      </div>
+      <div class="card tile">
+        <span class="label">Median full restore</span>
+        <span class="value">{{ ov.median_restore_s | duration }}</span>
+        <span class="context">code, releases and records included</span>
+      </div>
+      <div class="card tile">
+        <span class="label">Credit guard</span>
+        <span class="value">{{ ov.flows_today }}<small>/ {{ ov.flow_limit }}</small></span>
+        <span class="context">agent flows started today</span>
+        <div class="meter{% if ov.flow_pct >= 80 %} high{% endif %}" role="meter" aria-valuemin="0" aria-valuemax="{{ ov.flow_limit }}" aria-valuenow="{{ ov.flows_today }}" aria-label="Flows started today"><span style="width: {{ ov.flow_pct }}%"></span></div>
+      </div>
+    </div>
+  </section>
+
+  {% for run, track in spotlight %}
+  <section class="card card-pad" aria-label="Run in progress">
+    <header>
+      <div>
+        <span class="eyebrow">Now running · <span data-since="{{ run.created_at | iso }}">{{ (run.created_at | iso) }}</span></span>
+        <h2 style="margin-top:4px"><a href="/runs/{{ run.id }}">#{{ run.issue_iid }} {{ run.issue_title }}</a></h2>
+      </div>
+      {{ m.badge(badges[run.state.value], "live") }}
+    </header>
+    {{ m.run_track(track) }}
+    <p class="muted small" style="margin-top:8px">{{ run.timeline[-1].message if run.timeline else "" }}</p>
+  </section>
+  {% endfor %}
+
+  <section aria-labelledby="runs-h">
+    <header><h2 id="runs-h">Runs</h2><span class="muted small">{{ runs | length }} total · newest first</span></header>
+    {% if runs %}
+    <div class="card table-wrap">
+      <table class="table">
+        <thead><tr><th scope="col">Issue</th><th scope="col">Outcome</th><th scope="col">Gate</th>
+          <th scope="col" class="hide-sm">Change set</th><th scope="col" class="hide-sm">Duration</th><th scope="col">Updated</th></tr></thead>
+        <tbody>
+        {% for r in runs %}
+          <tr>
+            <td><a class="title" href="/runs/{{ r.id }}">#{{ r.issue_iid }} {{ r.issue_title }}</a>
+              <div class="sub mono">{{ r.id }}{% if r.mr_iid %} · !{{ r.mr_iid }}{% endif %}{% if r.incident_iid %} · incident #{{ r.incident_iid }}{% endif %}</div></td>
+            <td>{{ m.badge(badges[r.state]) }}
+              {% if r.rewind %}<div class="sub">{% if r.rewind.mitigated_after_s is not none %}mitigated {{ r.rewind.mitigated_after_s | duration }} · {% endif %}{{ "zero drift" if r.rewind.zero_drift else "drift found" }}</div>{% endif %}</td>
+            <td>{% if r.gate %}{{ m.badge(gate_badges[r.gate]) }}{% else %}<span class="muted">—</span>{% endif %}</td>
+            <td class="hide-sm">{% if r.counts %}{{ m.class_chips(r.counts, class_badges) }}{% else %}<span class="muted">—</span>{% endif %}</td>
+            <td class="num hide-sm">{{ r | run_duration | duration }}</td>
+            <td class="num"><span data-ago="{{ r.updated_at }}">{{ r.updated_at | ago }}</span></td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="card empty">
+      <div class="big" aria-hidden="true">{{ m.logo(44) }}</div>
+      <h3>No runs yet</h3>
+      <p class="muted">Label a GitLab issue <code>{{ trigger_label }}</code> and Rewind takes it from there.</p>
+    </div>
+    {% endif %}
+  </section>
+
+  <section aria-label="Reversibility classes" class="legend">
+    {% for cls, b in class_badges.items() %}<span>{{ m.badge(b) }} {{ class_help[cls] }}</span>{% endfor %}
+  </section>
+</div>
 {% endblock %}

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import hmac
 import logging
 import threading
@@ -25,8 +26,8 @@ from rewind.logging_setup import configure_logging
 from rewind.models import Reversibility
 from rewind.policy import Policy
 from rewind.resources import Context
-from rewind.runs import RunState
 from rewind.store import LockHeld, Store, open_store
+from service import views
 from service.mcp_server import build_mcp
 from service.orchestrator import Orchestrator
 from service.repo import RunRepository
@@ -85,6 +86,28 @@ def create_app(settings: Settings | None = None, *, gitlab: Any = None, cloudrun
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     app.mount("/mcp", mcp_app)
     templates = Jinja2Templates(directory=HERE / "templates")
+    for name in ("ago", "duration", "iso", "run_duration", "conds"):
+        templates.env.filters[name] = getattr(views, name)
+    # Cache-busting: the asset URL changes whenever a static file does.
+    static_files = sorted((HERE / "static").iterdir())
+    asset_version = hashlib.sha256(b"".join(f.read_bytes() for f in static_files)).hexdigest()[:10]
+
+    def page(request: Request, template: str, nav: str = "", status_code: int = 200, **context: Any):
+        meta = engine.ctx.meta
+        base = {
+            "project": meta.get("path") or settings.project_id, "project_url": meta.get("web_url", ""),
+            "asset_version": asset_version, "nav": nav, "badges": views.OUTCOME_BADGE,
+            "gate_badges": views.GATE_BADGE, "class_badges": views.CLASS_BADGE, "class_help": views.CLASS_HELP,
+            "outcome_badges": views.OUTCOME_TONE, "trigger_label": settings.trigger_label,
+        }
+        return templates.TemplateResponse(request, template, {**base, **context}, status_code=status_code)
+
+    def ensure_meta() -> None:
+        with contextlib.suppress(Exception):  # project path and URL for the header; never fail a page on it
+            if "default_branch" not in engine.ctx.meta:
+                from rewind.snapshot import load_meta
+
+                load_meta(engine.ctx)
 
     def require_token(request: Request) -> None:
         header = request.headers.get("authorization", "")
@@ -174,38 +197,66 @@ def create_app(settings: Settings | None = None, *, gitlab: Any = None, cloudrun
         return {"run": run.id, "state": run.state.value, "approvals": approvals}
 
     # -- dashboard -----------------------------------------------------------
-    @app.get("/", response_class=HTMLResponse)
-    def dashboard(request: Request):
+    @app.get("/api/version")
+    def api_version() -> dict:
         runs = repo.summaries()
-        stats = {
-            "runs": len(runs),
-            "shipped": sum(r["state"] == "shipped" for r in runs),
-            "rewound": sum(r["state"] == "rewound" for r in runs),
-            "blocked": sum(r["state"] == "blocked" for r in runs),
-            "flows_today": repo.flows_started_today(),
-            "flow_limit": settings.max_flows_per_day,
-            "active": any(r["state"] not in ("shipped", "rewound", "blocked", "failed") for r in runs),
-        }
-        return templates.TemplateResponse(request, "index.html", {
-            "runs": runs, "stats": stats, "status": {s.value: ledger.STATUS[s] for s in RunState},
-            "project": engine.ctx.meta.get("path") or settings.project_id,
-        })
+        latest = max((r["updated_at"] for r in runs), default="")
+        return {"version": f"{len(runs)}:{latest}"}
 
-    @app.get("/runs/{run_id}", response_class=HTMLResponse)
-    def run_page(request: Request, run_id: str):
+    @app.get("/api/runs/{run_id}/version")
+    def api_run_version(run_id: str) -> dict:
         run = repo.get(run_id)
         if not run:
             raise HTTPException(404, "run not found")
+        return {"version": run.updated_at.isoformat(), "state": run.state.value}
+
+    @app.get("/", response_class=HTMLResponse)
+    def dashboard(request: Request):
+        ensure_meta()
+        runs = repo.summaries()
+        ov = views.overview(runs, repo.flows_started_today(), settings.max_flows_per_day)
+        spotlight = []
+        for summary in ov.active[:2]:
+            run = repo.get(summary["id"])
+            if run:
+                spotlight.append((run, views.run_track(run)))
+        latest = max((r["updated_at"] for r in runs), default="")
+        return page(request, "index.html", nav="runs", runs=runs, ov=ov, spotlight=spotlight,
+                    version=f"{len(runs)}:{latest}")
+
+    @app.get("/runs/{run_id}", response_class=HTMLResponse)
+    def run_page(request: Request, run_id: str):
+        ensure_meta()
+        run = repo.get(run_id)
+        if not run:
+            return page(request, "404.html", status_code=404, detail=f"There's no run {run_id}.")
         report = None
         if run.rewind_id:
             with contextlib.suppress(RewindError):
                 report = engine.get_report(run.rewind_id)
         cs = report.change_set if report and report.change_set else repo.change_set(run_id)
         groups = cs.by_class() if cs else {r: [] for r in Reversibility}
-        return templates.TemplateResponse(request, "run.html", {
-            "run": run, "status": ledger.status_text(run), "groups": groups, "change_set": cs,
-            "report": report, "stages": ledger.STAGES,
-        })
+        total_s = (report.finished_at - report.started_at).total_seconds() if report and report.finished_at else None
+        covered = len({e.stage for e in run.evidence} & set(ledger.STAGES))
+        return page(request, "run.html", nav="runs", run=run, status=ledger.status_text(run), groups=groups,
+                    change_set=cs, report=report, stages=ledger.STAGES, track=views.run_track(run, report),
+                    timeline=views.rewind_timeline(report) if report else None, total_s=total_s, covered=covered)
+
+    @app.get("/policy", response_class=HTMLResponse)
+    def policy_page(request: Request):
+        ensure_meta()
+        classify: dict[Reversibility, list] = {r: [] for r in Reversibility}
+        for rule in policy.classify:
+            classify[rule.cls].append(rule)
+        return page(request, "policy.html", nav="policy", classify=classify, gate=policy.gate,
+                    privileges=policy.agent_privileges)
+
+    @app.exception_handler(404)
+    def _not_found(request: Request, exc: HTTPException):
+        wants_html = "text/html" in request.headers.get("accept", "")
+        if request.url.path.startswith(("/api", "/mcp", "/webhooks")) or not wants_html:
+            return JSONResponse({"detail": getattr(exc, "detail", "Not Found")}, status_code=404)
+        return page(request, "404.html", status_code=404, detail=None)
 
     @app.exception_handler(LockHeld)
     def _locked(_request: Request, exc: LockHeld):

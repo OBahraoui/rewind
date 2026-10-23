@@ -1,0 +1,90 @@
+{% macro logo(size=28) -%}
+<svg width="{{ size }}" height="{{ size }}" viewBox="0 0 32 32" aria-hidden="true">
+  <rect width="32" height="32" rx="9" fill="var(--accent)"/>
+  <path d="M15 10.5v11l-7.5-5.5z M24.5 10.5v11L17 16z" fill="#fff"/>
+</svg>
+{%- endmacro %}
+
+{% macro badge(b, extra="") -%}
+<span class="badge tone-{{ b.tone }} {{ extra }}"><span class="i" aria-hidden="true">{{ b.icon }}</span>{{ b.label }}</span>
+{%- endmacro %}
+
+{% macro class_chips(counts, class_badge) -%}
+<span class="chips">
+{%- for cls, b in class_badge.items() %}
+  {%- set n = (counts or {}).get(cls.value, 0) %}
+  <span class="chip tone-{{ b.tone }}{% if not n %} zero{% endif %}" title="{{ n }} {{ b.label | lower }}">
+    <span class="i" aria-hidden="true">{{ b.icon }}</span>{{ n }}<span class="sr-only"> {{ b.label | lower }}</span></span>
+{%- endfor %}
+</span>
+{%- endmacro %}
+
+{% macro run_track(track) -%}
+{%- set n = track.stations | length %}
+{%- set reached = namespace(i=0) %}
+{%- for s in track.stations %}{% if s.status in ("done", "current", "stopped") %}{% set reached.i = loop.index0 %}{% endif %}{% endfor %}
+{%- set end = (n if track.outcome and track.outcome.tone != "critical" else reached.i) %}
+<div class="track{% if track.rewound %} has-arc{% endif %}" role="group" aria-label="Run progress">
+  {%- if track.rewound %}
+  <svg class="arc" viewBox="0 0 100 56" preserveAspectRatio="none" aria-hidden="true">
+    <path d="M 94.4 44 C 82 2, 18 2, 5.6 44" vector-effect="non-scaling-stroke"/>
+  </svg>
+  <span class="arc-head" aria-hidden="true"></span>
+  <span class="arc-label">⟲ {{ track.arc_label }}</span>
+  {%- endif %}
+  <div class="rail">
+  <span class="progress" style="width: calc((100% - 100% / 9) * {{ end }} / {{ n }})" aria-hidden="true"></span>
+  <ol>
+    {%- for s in track.stations %}
+    <li class="station {{ s.status }}" title="{{ s.help }}">
+      <span class="node" aria-hidden="true">{% if s.status == "done" %}✓{% elif s.status == "stopped" %}✕{% endif %}</span>
+      <span class="name">{{ s.label }}<span class="sr-only">: {{ s.status }}</span></span>
+      <span class="when">{% if s.at %}{{ s.at.strftime('%H:%M:%S') }}{% else %}&nbsp;{% endif %}</span>
+    </li>
+    {%- endfor %}
+    <li class="station outcome {% if track.outcome %}tone-{{ track.outcome.tone }} done{% else %}pending{% endif %}">
+      <span class="node" aria-hidden="true">{% if track.outcome %}{{ track.outcome.icon }}{% endif %}</span>
+      <span class="name">{% if track.outcome %}{{ track.outcome.label }}{% else %}Outcome{% endif %}</span>
+      <span class="when">{% if track.outcome_at %}{{ track.outcome_at.strftime('%H:%M:%S') }}{% else %}&nbsp;{% endif %}</span>
+    </li>
+  </ol>
+  </div>
+</div>
+{%- endmacro %}
+
+{% macro stages_strip(stages, evidence) -%}
+<div class="stages" role="list" aria-label="DevSecOps lifecycle coverage">
+{%- for st in stages %}
+  {%- set items = evidence | selectattr("stage", "equalto", st) | list %}
+  <div class="stage{% if items %} on{% endif %}" role="listitem">
+    <div class="n">{{ st }}</div>
+    <div class="c">{% if items %}✓ {{ items | length }} evidence{% else %}—{% endif %}</div>
+  </div>
+{%- endfor %}
+</div>
+{%- endmacro %}
+
+{% macro rewind_chart(tl) -%}
+<div class="tl" role="img" aria-label="Rewind timeline: {{ '%.1f' % tl.total_s }} seconds in total{% if tl.mitigated_s is not none %}, production mitigated after {{ '%.1f' % tl.mitigated_s }} seconds{% endif %}">
+  {%- if tl.mitigated_pct is not none %}
+  <div class="marker{% if tl.mitigated_pct > 70 %} flip{% endif %}" style="left: {{ tl.mitigated_pct }}%"><span>production mitigated · {{ '%.1f' % tl.mitigated_s }}s</span></div>
+  {%- endif %}
+  <div class="bar">
+    {%- for seg in tl.segments %}
+    <button type="button" class="seg tone-{{ seg.tone }}" style="left: {{ seg.start_pct }}%; width: max(3px, calc({{ seg.width_pct }}% - 2px))"
+            aria-label="{{ seg.label }}: {{ seg.detail }}">
+      <span class="tip" role="tooltip"><b>{{ seg.icon }} {{ seg.label }}</b>{{ seg.detail }}</span>
+    </button>
+    {%- endfor %}
+  </div>
+  <div class="axis" aria-hidden="true">
+    {%- for pct, label in tl.ticks %}<span style="left: {{ pct }}%">{{ label }}</span>{% endfor %}
+  </div>
+</div>
+<div class="legend" aria-hidden="true">
+  <span><i style="background: var(--good)"></i>Undo step succeeded</span>
+  <span><i style="background: var(--warning)"></i>Conflict</span>
+  <span><i style="background: var(--critical)"></i>Failed</span>
+  <span><i style="background: var(--line-strong)"></i>Checkpoint and verification</span>
+</div>
+{%- endmacro %}

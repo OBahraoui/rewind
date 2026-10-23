@@ -29,6 +29,7 @@ from rewind.models import ChangeSet, RewindReport, utcnow
 from rewind.resources.repository import REWIND_MARKER
 from rewind.runs import Approval, FlowRun, Run, RunState, gate_fingerprints, security_fingerprints
 from rewind.snapshot import diff as diff_snapshots
+from service import views
 from service.repo import RunRepository
 
 log = logging.getLogger("rewind.orchestrator")
@@ -619,6 +620,7 @@ class Orchestrator:
         report = self.engine.rewind(run.checkpoint_id, reason=reason, trigger={"run": run.id, **(trigger or {})},
                                     code_scope=scope)
         run.rewind_id = report.id
+        run.extra["rewind_summary"] = views.rewind_summary(report)  # for the dashboard's one-read index
         if report.change_set:
             self._attribute(run, report.change_set)
         run.add_evidence("monitor", f"Rewind {report.id}", "zero drift" if report.zero_drift else "drift")

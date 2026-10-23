@@ -5,6 +5,7 @@
   python scripts/demo.py rewind    # launch promo: breaks production, gets rewound
   python scripts/demo.py block     # email receipts: blocked by the reversibility gate
   python scripts/demo.py ship --no-label   # create the issue, label it yourself on camera
+  python scripts/demo.py rewind --watch    # ...and follow the run live in this terminal
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("scenario", choices=SCENARIOS)
     p.add_argument("--no-label", action="store_true")
+    p.add_argument("--watch", action="store_true", help="follow the run live until it finishes")
     args = p.parse_args()
     s = Settings.from_env()
     s.require("gitlab_token", "project_id")
@@ -31,6 +33,10 @@ def main() -> None:
     issue = GitLabClient(s.gitlab_url, s.gitlab_token, s.project_id).create_issue(
         title.lstrip("# ").strip(), body.strip(), labels)
     print(f"#{issue['iid']} {issue['title']}\n{issue['web_url']}")
+    if args.watch and not args.no_label:
+        from rewind.cli.main import watch
+
+        watch(str(issue["iid"]), interval=5.0)
 
 
 if __name__ == "__main__":

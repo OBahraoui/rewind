@@ -28,6 +28,7 @@ dev = [
   "pytest-cov>=5",
   "hypothesis>=6.100",
   "ruff>=0.6",
+  "html5lib>=1.1",
 ]
 
 [project.scripts]
@@ -60,6 +61,7 @@ ignore = ["S101", "S603", "S607", "RUF012"]
 "app/tests/**" = ["S", "B"]
 "scripts/**" = ["S"]
 "ci/**" = ["S310"]
+"app/storefront.py" = ["E501", "RUF001"]  # an embedded HTML page (typographic − and ×)
 
 [tool.coverage.run]
 source = ["rewind", "service", "app"]

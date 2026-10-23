@@ -1,21 +1,43 @@
+{%- import "_macros.html" as m -%}
 <!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Rewind{% endblock %}</title>
+<meta name="description" content="{% block description %}Rewind checkpoints GitLab before agents act, gates their changes by reversibility, and undoes the whole change set if production regresses.{% endblock %}">
+<meta name="theme-color" content="#5040d6">
+<script>try{var t=localStorage.getItem("rewind-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap">
+<link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%235040d6'/%3E%3Cpath d='M15 10.5v11l-7.5-5.5z M24.5 10.5v11L17 16z' fill='%23fff'/%3E%3C/svg%3E">
+<script src="/static/app.js?v={{ asset_version }}" defer></script>
 {% block head %}{% endblock %}
-<link rel="stylesheet" href="/static/style.css">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⏪</text></svg>">
 </head>
 <body>
-<header class="top">
-  <a class="brand" href="/">⏪ Rewind</a>
-  <span class="tagline">Let agents do anything they can undo. Stop them only for what they can't.</span>
+<a class="sr-only" href="#main">Skip to content</a>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="/" aria-label="Rewind home">{{ m.logo(28) }}<span>Rewind</span></a>
+    <span class="crumb">{{ project }}</span>
+    <nav class="nav" aria-label="Main">
+      <a href="/" {% if nav == "runs" %}aria-current="page"{% endif %}>Runs</a>
+      <a href="/policy" {% if nav == "policy" %}aria-current="page"{% endif %}>Policy</a>
+      <a class="hide-sm" href="/api/docs">API</a>
+      <button class="icon-btn" type="button" data-theme-toggle aria-label="Change theme">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"/></svg>
+      </button>
+    </nav>
+  </div>
 </header>
-<main>
+<main id="main">
 {% block content %}{% endblock %}
 </main>
-<footer>Rewind · <a href="/api/docs">API</a> · <a href="/api/runs">runs.json</a> · MCP at <code>/mcp</code></footer>
+<footer>
+  <span>Rewind lets agents do anything it can undo, and stops them only for what it can't.</span>
+  <span><a href="/api/runs">runs.json</a> · MCP at <code>/mcp/</code> · <a href="{{ project_url }}">GitLab project</a></span>
+</footer>
 </body>
 </html>

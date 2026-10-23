@@ -239,10 +239,20 @@ Rewind never claims to undo the irreversible. It classifies, gates, and reports.
 ## Development
 
 ```bash
-pytest                           # engine, gate, property, orchestrator, HTTP, CI-script and app tests
-ruff check .
-rewind serve                     # local service on :8080 with REWIND_STORE=file://.rewind
+make help          # every task
+make check         # lint + all tests (engine, gate, property, orchestrator, HTTP, frontend, CI scripts, app)
+make simulate      # the whole loop offline, with realistic timings; dashboard on :8080
+make screenshots   # every page in light, dark and phone (URL=... for the live service)
+make demo-rewind   # open a demo issue and follow its run live in the terminal (also demo-ship, demo-block)
+make watch RUN=2   # follow any run by id or issue number
+make ship          # lint, test, rebase onto GitLab, push, redeploy (refuses while a run is in progress)
 ```
+
+The dashboard has an overview with a live spotlight on the run in progress, a page per run, and the policy page:
+- **The page per run** shows the run's track from checkpoint to outcome, with an arc back to the checkpoint when rewound. It also has the nine-stage evidence, the gate, the change set with provenance, the rewind's timeline, and the agent sessions.
+- **The policy page** shows the policy in force.
+
+It works in light and dark, at any width down to a phone, with live updates and no build step. Every page is checked as strict HTML5 in the test suite.
 
 ## License
 

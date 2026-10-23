@@ -2,8 +2,9 @@
 """Run Rewind's hands-off loop offline: the real engine, gate, orchestrator and dashboard
 against in-memory GitLab and Cloud Run, with scripted agent and pipeline behaviour.
 
-  python scripts/simulate.py            # run the three scenarios, then serve the dashboard on :8080
-  python scripts/simulate.py --no-serve # just print the ledgers
+  python scripts/simulate.py              # run the scenarios, then serve the dashboard on :8080
+  python scripts/simulate.py --no-serve   # just print the ledgers
+  python scripts/simulate.py --realistic  # add real-world latencies (for screenshots and demos)
 
 This is a development aid. The submission demo is always a real run on GitLab.
 """
@@ -17,6 +18,35 @@ from pathlib import Path
 PRICING = Path(__file__).parents[1].joinpath("app", "pricing.py").read_text()
 LEGACY = "def legacy_total(lines: list[Line]) -> int:\n    return subtotal(lines)"
 NEW = "def new_pricing_total(lines: list[Line]) -> int:\n    return subtotal(lines)"
+
+
+def add_latency(gl, cr) -> None:
+    """Make the in-memory fakes take as long as the real APIs, so timings look like production."""
+    import time
+
+    def slow(obj, name, seconds):
+        fn = getattr(obj, name)
+
+        def wrapped(*a, **kw):
+            time.sleep(seconds)
+            return fn(*a, **kw)
+        setattr(obj, name, wrapped)
+
+    slow(cr, "pin_traffic", 2.2)
+    for name, seconds in (("update_feature_flag", 0.45), ("create_commit", 0.9), ("merge_merge_request", 1.1),
+                          ("delete_release", 0.4), ("delete_tag", 0.35), ("create_mr_note", 0.3),
+                          ("update_issue", 0.3), ("list_issues", 0.05), ("list_merge_requests", 0.05)):
+        slow(gl, name, seconds)
+
+
+def in_progress(app, gl, title: str):
+    """A run left mid-flight (the developer agent is working), for the live view."""
+    orch = app.state.orchestrator
+    issue = gl.add_issue(title, labels=["rewind:auto"])
+    run = orch.start_run(issue)
+    gl.workflows[run.current_flow("plan").workflow_id]["status"] = "finished"
+    gl.create_issue_note(issue, "### 🧭 Plan\n1. `new_pricing_total()` in `app/pricing.py`, behind `new_pricing`")
+    return orch.advance(run.id)
 
 
 def build(tmp: str):
@@ -96,9 +126,12 @@ def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--no-serve", action="store_true")
     p.add_argument("--port", type=int, default=8080)
+    p.add_argument("--realistic", action="store_true", help="add real-world API latencies")
     args = p.parse_args()
     with tempfile.TemporaryDirectory() as tmp:
         app, gl, cr = build(tmp)
+        if args.realistic:
+            add_latency(gl, cr)
         bulk = "n = sum(q for _, q in lines)\n    s = subtotal(lines)\n    return s - s // 10 if n >= 10 else s"
         receipts = ("import httpx\n\n\ndef send(order):\n"
                     "    httpx.post('https://receipts.example.com/v1/send', json=order)\n")
@@ -109,6 +142,7 @@ def main() -> None:
             run_scenario(app, gl, cr, "Email a receipt when an order is placed", "return subtotal(lines)",
                          monitor_ok=True, extra={"app/receipts.py": receipts}),
         ]
+        in_progress(app, gl, "Seasonal pricing: 5% off kettles")
         for run in runs:
             note = next(n for n in gl.issue_notes[run.issue_iid] if "Rewind ledger" in n["body"])
             print(f"\n{'=' * 100}\n#{run.issue_iid} {run.issue_title} → {run.state.value}\n{'=' * 100}")
