@@ -151,6 +151,15 @@ def create_app(settings: Settings | None = None, *, gitlab: Any = None, cloudrun
         orch.tick()
         return {"ok": True}
 
+    @app.post("/api/runs/{run_id}/stop")
+    def api_stop(run_id: str, request: Request, by: str = "api") -> dict:
+        require_token(request)
+        try:
+            run = orch.stop(run_id, by=by)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from None
+        return {"run": run.id, "state": run.state.value}
+
     @app.post("/api/runs/{run_id}/approve")
     def api_approve(run_id: str, body: ApproveRequest, request: Request) -> dict:
         """The only way to accept what Rewind can't undo: authenticated, named, reasoned, bound to one commit."""

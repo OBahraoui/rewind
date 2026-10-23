@@ -406,3 +406,33 @@ def test_human_push_during_release_survives_the_rewind(orch, gl, cr):
     assert gl.tree("main")["docs/notes.md"] == "human work\n"
     assert "def legacy_total(items):\n    return sum(items)" in gl.tree("main")["app/pricing.py"]
     assert orch.engine.get_report(run.rewind_id).zero_drift
+
+
+def test_developer_posts_a_plan_when_no_planner_flow(orch, gl):
+    from rewind.config import FlowRef
+
+    orch.flows.refs["plan"] = FlowRef.parse("none")
+    issue = gl.add_issue("Promo", labels=["rewind:auto"])
+    run = orch.start_run(issue)
+    assert run.state is RunState.DEVELOPING
+    goal = [c for c in gl.calls if c[0] == "start_workflow"][-1][2]["goal"]
+    assert "### 🧭 Plan" in goal
+    gl.create_issue_note(issue, "### 🧭 Plan\n1. new_pricing_total() in app/pricing.py, behind new_pricing")
+    agent_opens_mr(gl, issue, "def new_pricing_total(items):\n    return sum(items) - 1")
+    finish_flow(gl, run, "develop")
+    run = orch.advance(run.id)
+    plan = next(e for e in run.evidence if e.stage == "plan")
+    assert "before coding" in plan.name and "#note_" in plan.url
+
+
+def test_stop_halts_a_run_from_a_comment(orch, gl):
+    issue = gl.add_issue("Promo", labels=["rewind:auto"])
+    run = orch.start_run(issue)
+    reply = orch.command(text="/rewind stop", author_id=2, author="alice", issue_iid=issue)
+    run = orch.repo.get(run.id)
+    assert run.state is RunState.FAILED and "Stopped by @alice" in run.error
+    assert "Stopped run" in reply
+    assert "already finished" in orch.command(text="/rewind stop", author_id=2, author="alice", issue_iid=issue)
+    # A stopped run is never advanced again.
+    finish_flow(gl, run, "plan")
+    assert orch.advance(run.id).state is RunState.FAILED

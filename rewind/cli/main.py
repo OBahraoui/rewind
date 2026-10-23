@@ -443,6 +443,22 @@ def approve(run_id: str,
 
 
 @app.command()
+def stop(run_id: str, by: Annotated[str, typer.Option(help="Your name, recorded in the ledger")] =
+         os.environ.get("USER", "")) -> None:
+    """Stop a run: Rewind gates, merges and releases nothing more from it."""
+    import httpx
+
+    s = _settings()
+    s.require("public_url", "api_token")
+    resp = httpx.post(f"{s.public_url}/api/runs/{run_id}/stop", params={"by": by},
+                      headers={"Authorization": f"Bearer {s.api_token}"}, timeout=60)
+    if resp.status_code >= 400:
+        typer.secho(f"✗ {resp.status_code}: {resp.json().get('detail', resp.text)}", fg="red")
+        raise typer.Exit(1)
+    typer.secho(f"✓ stopped run {run_id}", fg="green", bold=True)
+
+
+@app.command()
 def gate(base: Annotated[str, typer.Option(help="Base commit (e.g. $CI_MERGE_REQUEST_DIFF_BASE_SHA)")],
          head: Annotated[str, typer.Option(help="Head commit (e.g. $CI_COMMIT_SHA)")],
          policy: Annotated[str, typer.Option(help="Policy file; empty uses Rewind's built-in policy")] = "",

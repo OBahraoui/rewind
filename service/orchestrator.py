@@ -83,6 +83,7 @@ HELP = """⏪ Rewind commands
 - `/rewind`: undo this run's whole change set (production traffic, flags, code, records) and verify zero drift
 - `/rewind dry-run`: show the exact inverse plan without changing anything
 - `/rewind status`: where the run is
+- `/rewind stop`: stop the run here; Rewind gates, merges and releases nothing more from it
 Accepting something Rewind can't undo is never done from a comment (agents comment with your identity):
 use `rewind approve <run> --reason "..."` or the authenticated API."""
 
@@ -259,7 +260,8 @@ class Orchestrator:
         issue = self.gitlab.get_issue(run.issue_iid) or {}
         flow = self._start_flow(run, "develop", goals.develop(run.issue_iid, run.issue_title,
                                                               issue.get("description") or "", self.default_branch,
-                                                              run.checkpoint_id or ""),
+                                                              run.checkpoint_id or "",
+                                                              plan_first=not self.flows.enabled("plan")),
                                 issue_iid=run.issue_iid)
         if flow:
             run.move(RunState.DEVELOPING, f"developer flow #{flow.workflow_id} started")
@@ -284,6 +286,7 @@ class Orchestrator:
         if not mr:
             self._fail(run, "developer flow finished without opening a merge request")
             return
+        self._plan_evidence(run)
         run.mr_iid, run.mr_url = mr["iid"], mr.get("web_url", "")
         self.gitlab.create_mr_note(mr["iid"], f"⏪ Rewind checkpoint `{run.checkpoint_id}` covers everything this "
                                              f"merge request ships (run `{run.id}`). It will be gated for "
@@ -292,6 +295,19 @@ class Orchestrator:
         run.add_evidence("create", f"MR !{mr['iid']} opened by developer flow #{dev.workflow_id if dev else '?'}",
                          "opened", run.mr_url)
         run.move(RunState.GATING, f"MR !{mr['iid']} opened")
+
+    def _plan_evidence(self, run: Run) -> None:
+        """The plan comment the developer agent posted before coding (when no planner flow ran)."""
+        if any(e.stage == "plan" for e in run.evidence):
+            return
+        dev = run.current_flow("develop")
+        since = dev.started_at.isoformat()[:19] if dev else ""
+        for note in self.gitlab.list_issue_notes(run.issue_iid):
+            body = note.get("body") or ""
+            if goals.PLAN_MARKER in body and (note.get("created_at") or "") >= since:
+                run.add_evidence("plan", f"Plan posted by developer flow #{dev.workflow_id if dev else '?'} "
+                                         f"before coding", "posted", f"{run.issue_url}#note_{note['id']}")
+                return
 
     def _on_gating(self, run: Run) -> None:
         mr = self.gitlab.get_merge_request(run.mr_iid)
@@ -708,6 +724,14 @@ class Orchestrator:
                     f"identity, so a comment can't prove a human decided. Run\n\n"
                     f"`rewind approve {run.id} --reason \"...\"`\n\nwith your Rewind API token. The approval is bound "
                     f"to the exact commit you approve.")
+        if verb == "stop":
+            try:
+                self.stop(run.id, by=f"@{author}")
+            except ValueError as exc:
+                return f"⏪ {exc}"
+            return (f"⏪ Stopped run `{run.id}` as requested by @{author}. Rewind will gate, merge and release "
+                    f"nothing more from it. An agent session that is still running may finish on its own; "
+                    f"its merge request stays open. Comment `/rewind` to undo what the run already changed.")
         if verb == "status":
             link = f" · [dashboard]({self.settings.public_url}/runs/{run.id})" if self.settings.public_url else ""
             return f"⏪ Run `{run.id}`: **{ledger.STATUS[run.state]}**{link}"
@@ -738,6 +762,24 @@ class Orchestrator:
         mitigated = f" Production mitigated in {report.mitigated_after_s:.1f}s." if report.mitigated_after_s else ""
         return (f"⏪ Rewound run `{run.id}` to checkpoint `{run.checkpoint_id}` as requested by @{author}."
                 f"{mitigated} Verification: {verdict}. Undo with `rewind undo-last`.")
+
+    def stop(self, run_id: str, *, by: str) -> Run:
+        """A human halts a run. Stopping only removes autonomy, so it needs no special trust."""
+        with self._run_lock(run_id, blocking=True) as acquired:
+            if not acquired:
+                raise ValueError("Rewind is busy with this run; try again in a minute.")
+            run = self.repo.get(run_id)
+            if run is None:
+                raise ValueError(f"no run {run_id}")
+            if run.state.terminal:
+                raise ValueError(f"Run `{run.id}` already finished ({run.state.value}).")
+            if run.state == RunState.REWINDING:
+                raise ValueError(f"Run `{run.id}` is rewinding; let it finish so production is consistent.")
+            watching = run.state == RunState.RELEASING
+            self._fail(run, f"Stopped by {by}" + ("; Rewind is no longer watching the release" if watching else ""))
+            self.repo.save(run)
+            self._publish(run)
+            return run
 
     def approve(self, run_id: str, *, by: str, reason: str) -> Run:
         """A human accepts what the gate could not allow, for the MR's current head only."""

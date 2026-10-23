@@ -1,17 +1,21 @@
-"""Goals handed to Duo flows. The reversibility rules are stated up front so agents
-take the undoable path first; the gate enforces them either way."""
+"""Goals handed to Duo flows.
+
+Agents get the general way to ship reversibly (feature flags, tests, out-of-bounds paths). The
+specific checks live in Rewind's gate and in production monitoring, not in the prompt: Rewind
+exists for the mistakes nobody anticipated, so it must not depend on agents knowing every rule."""
 
 from __future__ import annotations
 
-RULES = """Rules (Rewind's reversibility gate checks these before anything merges):
-- Ship user-visible behaviour behind a GitLab feature flag. In app/pricing.py never change legacy_total();
-  put new pricing logic in new_pricing_total(), which runs only when flag `new_pricing` is on, and turn the
-  flag on for production in config/flags.yaml (new_pricing: production: true). The pipeline applies it.
+RULES = """How to ship here (see AGENTS.md):
+- Ship user-visible behaviour behind a GitLab feature flag. Pricing changes go in new_pricing_total() in
+  app/pricing.py, which runs only when flag `new_pricing` is on; turn the flag on per environment in
+  config/flags.yaml (e.g. new_pricing: production: true). The pipeline applies it.
 - Add or update tests in app/tests for every behaviour change.
 - Do not edit rewind/, service/, flows/, agents/, ci/, infra/, .gitlab/, .gitlab-ci.yml, AGENTS.md or CLAUDE.md.
-- Do not add code that calls external services or sends messages, and no migration without downgrade().
-- Never push to the default branch directly: only a gated merge request reaches it.
-Everything you change within these rules can be undone by Rewind in one command."""
+- Never push to the default branch directly: only a merge request reaches it.
+Rewind checks your merge request before merge and can undo everything it lets through."""
+
+PLAN_MARKER = "🧭 Plan"
 
 
 def plan(iid: int, title: str, checkpoint: str) -> str:
@@ -26,12 +30,18 @@ requests. Rewind checkpoint: {checkpoint}.
 {RULES}"""
 
 
-def develop(iid: int, title: str, description: str, default_branch: str, checkpoint: str) -> str:
+def develop(iid: int, title: str, description: str, default_branch: str, checkpoint: str,
+            plan_first: bool = True) -> str:
+    plan = (f"""First, before writing code, post exactly one comment on issue #{iid} that starts with
+"### {PLAN_MARKER}": the files you will change, how the change ships (behind which feature flag, if any),
+and how you will test it. Then implement it.
+
+""" if plan_first else "")
     return f"""Implement issue #{iid}: {title}
 
 {description.strip()}
 
-Open exactly one merge request targeting {default_branch} with "Closes #{iid}" in its description.
+{plan}Open exactly one merge request targeting {default_branch} with "Closes #{iid}" in its description.
 Rewind checkpoint: {checkpoint}.
 
 {RULES}"""

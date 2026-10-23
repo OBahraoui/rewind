@@ -378,7 +378,7 @@ class FakeGitLab:
     @locked
     def create_mr_note(self, iid: int, body: str) -> dict:
         self._record("create_mr_note", iid)
-        note = {"id": next(self._seq), "body": body, "author": self.users["rewind-bot"]}
+        note = {"id": next(self._seq), "body": body, "author": self.users["rewind-bot"], "created_at": now()}
         self.mr_notes.setdefault(iid, []).append(note)
         return note
 
@@ -450,7 +450,7 @@ class FakeGitLab:
     @locked
     def create_issue_note(self, iid: int, body: str) -> dict:
         self._record("create_issue_note", iid)
-        note = {"id": next(self._seq), "body": body, "author": self.users["rewind-bot"]}
+        note = {"id": next(self._seq), "body": body, "author": self.users["rewind-bot"], "created_at": now()}
         self.issue_notes.setdefault(iid, []).append(note)
         return note
 

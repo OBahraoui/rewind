@@ -99,10 +99,15 @@ Trust is asymmetric: undoing is cheap to authorize, and accepting the irreversib
 | Undo a run (shipped, blocked or releasing) | comment `/rewind` on the issue or MR | any project member with Developer or higher |
 | See the exact inverse plan first | comment `/rewind dry-run` | same |
 | See where a run is | comment `/rewind status` | same |
+| Stop a run where it is | comment `/rewind stop` (or `rewind stop <run>`) | same |
 | Undo only what came after one agent session | `rewind to <step checkpoint>` (listed in the ledger) | CLI |
 | Accept something Rewind can't undo | `rewind approve <run> --reason "..."` | only with Rewind's API token |
 
 Approvals are never taken from comments: Duo flows act with your identity, so a comment can't prove a human decided. An approval records who and why, and it covers only the exact commit approved. A new commit is gated again.
+
+### What agents are told, and what they aren't
+
+Agents get the general way to ship here, in [`AGENTS.md`](AGENTS.md) and in each goal: put user-visible changes behind a feature flag, write tests, and stay out of the pipeline and guardrail paths. The specific checks are not in the prompt. The gate's rules (external side effects, migrations without downgrade, frozen default paths) and production's business invariants (for example, no order discounted by more than 50%) live in [`rewind/policy.yaml`](rewind/policy.yaml) and [`ci/monitor.py`](ci/monitor.py). Rewind exists for the mistakes nobody anticipated, so it must not depend on agents knowing every rule. In early rehearsals, agents that were told the 50% rule simply followed it.
 
 ### Guarantees (each is tested)
 
@@ -116,11 +121,23 @@ Approvals are never taken from comments: Duo flows act with your identity, so a 
 - **Safe retries**: writes are never repeated after an ambiguous failure (a 5xx or timeout), so a flaky API can't start a second agent or post twice.
 - **Credit guard**: Rewind starts at most `REWIND_MAX_FLOWS_PER_DAY` flows a day, so a loop can't burn your GitLab Credits.
 
+## Proven on the real project
+
+These ran on this GitLab project and its Google Cloud deployment, not in a simulator:
+
+- **Real rollback, measured** (`pytest -m integration tests/integration`): Rewind moved staging traffic back to the checkpoint revision on Cloud Run, switched a feature flag off and deleted a label. Production was mitigated in **6.45s**, verification showed **zero drift**, and a second rewind was a no-op.
+- **Full hands-off runs:** the Duo developer flow opened the MR, the gate allowed it, the MR pipeline and Duo code review passed, and Rewind merged it. When the release didn't complete, Rewind opened an incident, cancelled the pipeline, restored the code in **26s** with zero drift, and resolved the incident itself.
+- **Caught in rehearsal and fixed:**
+  - agent setup that assumed `pip`
+  - a GitLab runner rate limit, now retried instead of rewound
+  - a release auto-cancelled by a newer push, now never cancelled
+  - a restore that also reverted a human's later commit, now scoped to the run's own changes
+
 ## DevSecOps lifecycle: all nine stages
 
 | Stage | What happens | Evidence in the project |
 |---|---|---|
-| **plan** | Custom planner flow posts a plan with a reversibility class per step | plan comment on the issue · ledger |
+| **plan** | The agent posts its plan on the issue before coding (or the custom planner flow does, with a reversibility class per step) | plan comment on the issue · ledger |
 | **create** | Developer flow opens the MR; Rewind records the checkpoint on it and links the agent session | MR + checkpoint note |
 | **verify** | Unit + engine tests with coverage, lint, Duo code review | pipeline test report · coverage |
 | **package** | Container image built and pushed to the GitLab container registry (and Artifact Registry) | container registry |

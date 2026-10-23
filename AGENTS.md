@@ -1,27 +1,24 @@
 # Instructions for AI agents working in this repository
 
 This project ships changes to production with no human in the loop. **Rewind** checkpoints the
-project before you act, gates your merge request by reversibility, and undoes your whole
-change set if production regresses. You are free to do anything Rewind can undo; you are
-stopped only for what it can't.
+project before you act, checks your merge request for anything it couldn't undo, and undoes your
+whole change set if production regresses. You are free to do anything Rewind can undo.
 
-## Ship reversibly
-- User-visible behaviour goes behind the GitLab feature flag `new_pricing`.
-  - `app/pricing.py`: never change `legacy_total()`, the live default path.
-  - Put new pricing logic in `new_pricing_total()`; it runs only when the flag is on.
-  - Turn the flag on per environment in `config/flags.yaml`; the pipeline applies it.
-- Prices are integer cents. No order may be discounted by more than 50%: production
-  monitoring checks this on every response and triggers a rewind if it breaks.
+Rewind's gate and production monitoring check more than this file lists. If your merge request is
+rerouted or blocked, the Rewind ledger on the issue explains why and what to change.
+
+## How to ship here
+- Ship user-visible behaviour behind a GitLab feature flag, so a release can be switched off.
+  Pricing changes go in `new_pricing_total()` in `app/pricing.py`, which runs only when the flag
+  `new_pricing` is on; turn the flag on per environment in `config/flags.yaml` (the pipeline applies it).
+- Prices are integer cents.
 - Add or update tests in `app/tests` for every behaviour change. Run them if Python is available
   (`python3 -m pytest app/tests`); the merge request pipeline always runs them.
 
-## Never (the merge request will be blocked)
-- Edit `rewind/`, `service/`, `flows/`, `agents/`, `ci/`, `infra/`, `.gitlab/`, `.gitlab-ci.yml`,
-  `AGENTS.md` or `CLAUDE.md`. Agents don't change their own guardrails or the pipeline.
-- Add code that calls external services or sends messages (email, SMS, webhooks).
-- Add a migration in `app/migrations/` without a `downgrade()`.
-- Push to the default branch directly. Changes reach `main` only through a merge request that
-  Rewind gated; an agent commit that skips the gate is rewound automatically.
+## Out of bounds
+- Don't edit `rewind/`, `service/`, `flows/`, `agents/`, `ci/`, `infra/`, `.gitlab/`, `.gitlab-ci.yml`,
+  `AGENTS.md` or `CLAUDE.md`: agents don't change their own guardrails or the delivery pipeline.
+- Don't push to the default branch directly. Changes reach `main` only through a merge request.
 
 ## Merge requests
 - One merge request per issue, targeting the default branch, with `Closes #<iid>`.

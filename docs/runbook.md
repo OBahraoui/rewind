@@ -67,8 +67,9 @@ Don't push to `main` while a run is in progress: Rewind stops the run rather tha
 changes were the agent's. Try a comment command on a finished run: `/rewind status`, then
 `/rewind dry-run`.
 
-If the agent "fixes" the promo (e.g. refuses to discount small orders), the monitor won't fail.
-That's a smart agent, not a Rewind bug: re-run, or use `rewind to <checkpoint>` on camera.
+Agents are told how to ship (flags, tests) but not the monitor's invariants, so the promo
+normally reaches production and breaks it. If an agent caps the discount anyway, the run ships
+instead: that's a careful agent, not a Rewind bug. Re-label the issue, or use `/rewind` on camera.
 
 ## 7. Record (see docs/demo-script.md), then freeze
 After submitting, do not push to the project until winners are announced (~16 Nov). Keep the
