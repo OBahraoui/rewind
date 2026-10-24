@@ -19,7 +19,7 @@ import re
 import secrets
 import threading
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 from rewind import gate as gate_mod
@@ -67,7 +67,16 @@ GUARDED = {RunState.PLANNING, RunState.DEVELOPING, RunState.GATING, RunState.RER
            RunState.FIXING, RunState.REVIEWING, RunState.MERGING, RunState.RELEASING}
 
 # Duo's developer flow opens merge requests as drafts, and GitLab refuses to merge a draft.
-DRAFT_PREFIX = re.compile(r"^\s*(\[draft\]|\(draft\)|draft:)\s*", re.IGNORECASE)
+DRAFT_PREFIX = re.compile(r"^(\s*(\[draft\]|\(draft\)|draft:)\s*)+", re.IGNORECASE)  # "Draft: Draft: x" too
+# Why GitLab won't merge yet, in words, for the run's timeline and its timeout message.
+MERGE_WAITS = {"not_approved": "it needs approval from a human reviewer",
+               "discussions_not_resolved": "open threads on the merge request must be resolved",
+               "conflict": "it conflicts with the default branch", "need_rebase": "it must be rebased",
+               "merge_request_blocked": "another merge request blocks it",
+               "security_policy_violations": "a security policy blocks it",
+               "status_checks_must_pass": "external status checks haven't passed",
+               "ci_must_pass": "its pipeline must pass", "ci_still_running": "its pipeline is still running",
+               "checking": "GitLab is still checking it", "unchecked": "GitLab is still checking it"}
 
 # Pipeline stage -> DevSecOps lifecycle stage, for evidence links.
 STAGE_MAP = {"verify": "verify", "package": "package", "secure": "secure", "test": "secure",
@@ -75,7 +84,7 @@ STAGE_MAP = {"verify": "verify", "package": "package", "secure": "secure", "test
              "release": "release"}
 
 STEP_LABEL = {"plan": "planner flow", "develop": "developer flow", "review": "code review flow",
-              "fix": "fix-pipeline flow", "secfix": "security-fix flow"}
+              "fix": "fix-pipeline flow", "secfix": "security-fix flow", "reviewfix": "review-fix flow"}
 # Who made a change that no agent session made.
 UNATTRIBUTED = {"cloud_run": "release pipeline", "feature_flag": "release pipeline (configure)",
                 "release": "release pipeline", "tag": "release pipeline", "repository": "Rewind's gated merge",
@@ -206,7 +215,9 @@ class Orchestrator:
                        else f"run {run.extra.get('waiting_for_run', 'ahead of it')}")
             self._fail(run, f"waited over an hour for {waiting}; nothing was started. Re-label the issue to try again.")
         else:
-            self._fail(run, f"timed out while {run.state.value}")
+            waiting = run.extra.get("merge_waiting") if run.state == RunState.MERGING else None
+            why = f" ({MERGE_WAITS.get(waiting, waiting)})" if waiting else ""
+            self._fail(run, f"timed out while {run.state.value}{why}")
 
     def _start_flow(self, run: Run, step: str, goal: str, **kw: Any) -> FlowRun | None:
         """Start a flow, unless the daily credit guard is spent (then the run stops for a human)."""
@@ -501,6 +512,13 @@ class Orchestrator:
         if mr["sha"] != run.gated_sha:
             run.move(RunState.GATING, "MR head moved before merge; gating again")
             return
+        merge_status = mr.get("detailed_merge_status") or ""
+        if merge_status == "requested_changes":
+            self._address_review(run, mr)
+            return
+        if merge_status in MERGE_WAITS and run.extra.get("merge_waiting") != merge_status:
+            run.extra["merge_waiting"] = merge_status
+            run.note(f"waiting to merge: {MERGE_WAITS[merge_status]}")
         if mr.get("draft") or mr.get("work_in_progress"):
             mr["title"] = DRAFT_PREFIX.sub("", mr["title"]) or mr["title"]
             self.gitlab.update_merge_request(run.mr_iid, title=mr["title"])
@@ -519,6 +537,42 @@ class Orchestrator:
         run.merge_sha = merged.get("merge_commit_sha") or merged.get("squash_commit_sha") or ""
         run.add_evidence("release", f"MR !{run.mr_iid} merged as {run.merge_sha[:8]}", "merged", run.mr_url)
         run.move(RunState.RELEASING, f"merged gated commit {run.gated_sha[:8]} as {run.merge_sha[:8]}")
+
+    def _address_review(self, run: Run, mr: dict) -> None:
+        """The code review requested changes. The developer agent addresses them, then the new commit is gated,
+        tested and reviewed again. Rewind never dismisses a review: if the changes stay requested, a human decides."""
+        comments = self._review_comments(run)
+        run.add_evidence("verify", f"Duo code review requested changes on MR !{run.mr_iid}", "changes requested",
+                         run.mr_url)
+        attempts = int(run.extra.get("review_fix_attempts", 0))
+        if attempts < self.settings.max_review_fix_attempts and self.flows.enabled("develop"):
+            run.extra["review_fix_attempts"] = attempts + 1
+            flow = self._start_flow(run, "reviewfix", goals.review_fix(run.mr_iid, mr["source_branch"], comments),
+                                    mr_iid=run.mr_iid, source_branch=mr["source_branch"], using="develop")
+            if flow:
+                run.extra["fixing_step"] = "reviewfix"
+                run.move(RunState.FIXING, f"code review requested changes; review-fix flow #{flow.workflow_id} "
+                                          f"started")
+            return
+        self._label(run, add=["rewind:needs-human"])
+        said = re.split(r"(?<=[.!?])\s", " ".join(comments[0].split()), maxsplit=1)[0] if comments else ""
+        self._block(run, f"Duo code review still requests changes on MR !{run.mr_iid} after {attempts} agent "
+                         f"fix attempt(s)" + (f": {said}" if said else ""))
+
+    def _review_comments(self, run: Run) -> list[str]:
+        """What the reviewer wrote during the latest review, oldest first (Rewind's own notes left out)."""
+        flow = run.current_flow("review")
+        since = flow.started_at if flow else run.created_at
+        out = []
+        for note in self.gitlab.list_mr_notes(run.mr_iid):
+            body = (note.get("body") or "").strip()
+            if note.get("system") or not body or body.startswith("⏪"):
+                continue
+            with contextlib.suppress(ValueError, TypeError):
+                if datetime.fromisoformat(str(note.get("created_at")).replace("Z", "+00:00")) < since:
+                    continue
+            out.append(body[:1500])
+        return out[:8]
 
     def _on_releasing(self, run: Run) -> None:
         pipelines = self.gitlab.list_pipelines(ref=self.default_branch, sha=run.merge_sha)

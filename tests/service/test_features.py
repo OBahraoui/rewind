@@ -464,3 +464,89 @@ def test_a_run_locked_by_another_instance_is_left_alone(orch, gl):
     with orch.engine.store.lock(f"run-{run.id}", owner="other-instance"):
         assert orch.advance(run.id) is None  # the other instance owns this run right now
     assert orch.advance(run.id) is not None
+
+
+# -- code review that requests changes ---------------------------------------------
+def to_review(orch, gl, title="Draft: Promo pricing"):
+    issue, run = to_testing(orch, gl)
+    mr = run.mr_iid
+    gl.mrs[mr]["title"] = title
+    gl.add_pipeline("agent/feature", gl.get_merge_request(mr)["sha"], "success", mr_iid=mr,
+                    jobs=[{"name": "test", "stage": "verify", "status": "success"}])
+    run = orch.advance(run.id)
+    assert run.state is RunState.REVIEWING
+    return issue, mr, run
+
+
+REVIEW = ["A flat $15 off breaks the guardrail that an order is never charged less than half its subtotal. "
+          "Clamp the result.", "This test locks in a total of 0 for a tea."]
+
+
+def test_requested_changes_go_back_to_the_agent_then_merge(orch, gl):
+    _, mr, run = to_review(orch, gl)
+    gl.review(mr, REVIEW, request_changes=True)
+    finish_flow(gl, run, "review")
+    run = orch.advance(run.id)  # review done -> merging, where GitLab says changes were requested
+    run = orch.advance(run.id)
+    assert run.state is RunState.FIXING and run.extra["fixing_step"] == "reviewfix"
+    goal = [c for c in gl.calls if c[0] == "start_workflow"][-1][2]
+    assert "requested changes" in goal["goal"] and "> A flat $15 off" in goal["goal"]
+    assert goal["merge_request_id"] == mr and goal["workflow_definition"] == "developer/v1"
+    assert any(e.status == "changes requested" for e in run.evidence)
+    # The agent pushes the fix: gated again, tested again, reviewed again, and this time the review is happy.
+    sha = gl.commit_files("agent/feature", {"app/pricing.py": gl.tree("agent/feature")["app/pricing.py"] + "\n"})
+    finish_flow(gl, run, "reviewfix")
+    run = orch.advance(run.id)
+    assert run.state is RunState.TESTING and run.gated_sha == sha
+    gl.add_pipeline("agent/feature", sha, "success", mr_iid=mr, jobs=[])
+    run = orch.advance(run.id)
+    assert run.state is RunState.REVIEWING
+    gl.review(mr, ["Looks good now."], request_changes=False)
+    finish_flow(gl, run, "review")
+    run = orch.advance(run.id)
+    run = orch.advance(run.id) if run.state is RunState.MERGING else run
+    assert run.state is RunState.RELEASING, run.timeline[-1]
+
+
+def test_changes_still_requested_after_the_fix_block_with_the_reviewers_words(orch, gl):
+    _, mr, run = to_review(orch, gl)
+    gl.review(mr, REVIEW, request_changes=True)
+    finish_flow(gl, run, "review")
+    orch.advance(run.id)
+    run = orch.advance(run.id)
+    sha = gl.commit_files("agent/feature", {"app/pricing.py": gl.tree("agent/feature")["app/pricing.py"] + "#\n"})
+    finish_flow(gl, run, "reviewfix")
+    orch.advance(run.id)
+    gl.add_pipeline("agent/feature", sha, "success", mr_iid=mr, jobs=[])
+    run = orch.advance(run.id)
+    gl.review(mr, ["Still below half the subtotal for a tea."], request_changes=True)
+    finish_flow(gl, run, "review")
+    orch.advance(run.id)
+    run = orch.advance(run.id)
+    assert run.state is RunState.BLOCKED
+    assert "still requests changes" in run.error and "Still below half the subtotal for a tea." in run.error
+    assert "rewind:needs-human" in gl.issues[run.issue_iid]["labels"]
+
+
+def test_a_doubled_draft_prefix_is_cleared_in_one_go(orch, gl):
+    _, mr, run = to_review(orch, gl, title="Draft: Draft: Promo pricing")
+    finish_flow(gl, run, "review")
+    run = orch.advance(run.id)
+    run = orch.advance(run.id) if run.state is RunState.MERGING else run
+    assert run.state is RunState.RELEASING and gl.mrs[mr]["title"] == "Promo pricing"
+
+
+def test_a_merge_that_times_out_says_what_it_waited_for(orch, gl):
+    from datetime import timedelta
+
+    _, mr, run = to_review(orch, gl)
+    finish_flow(gl, run, "review")
+    gl.mrs[mr]["review_status"] = "not_approved"  # e.g. an approval rule a human must satisfy
+    run = orch.advance(run.id)
+    run = orch.advance(run.id)
+    assert run.state is RunState.MERGING and "waiting to merge: it needs approval" in run.timeline[-1].message
+    run.state_since = run.state_since - timedelta(minutes=11)
+    orch.repo.save(run)
+    run = orch.advance(run.id)
+    assert run.state is RunState.FAILED
+    assert run.error == "timed out while merging (it needs approval from a human reviewer)"

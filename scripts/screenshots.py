@@ -53,13 +53,41 @@ def wait(url: str) -> None:
     raise SystemExit(f"{url} did not come up")
 
 
+def readme_shots(url: str, out: Path) -> None:
+    """The two images at the top of the README: the newest rewind that rescued production, and the overview."""
+    from playwright.sync_api import sync_playwright
+
+    runs = json.load(urllib.request.urlopen(f"{url}/api/runs"))
+    rewound = [r for r in runs if r["state"] == "rewound"]
+    if not rewound:
+        raise SystemExit("no rewound run on this service yet")
+    best = next((r for r in rewound if (r.get("rewind") or {}).get("mitigated_after_s") is not None), rewound[0])
+    out.mkdir(parents=True, exist_ok=True)
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch()
+        page = browser.new_context(viewport={"width": 1280, "height": 860}, device_scale_factor=2,
+                                   color_scheme="light").new_page()
+        for name, path in (("rewound-run", f"/runs/{best['id']}"), ("overview", "/")):
+            page.goto(url + path, wait_until="networkidle")
+            page.wait_for_timeout(400)
+            page.screenshot(path=str(out / f"{name}.png"))
+        browser.close()
+    print(f"README images from run {best['id']} (#{best['issue_iid']}) in {out}")
+
+
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--url", default="")
     p.add_argument("--out", default="")
     p.add_argument("--port", type=int, default=8765)
+    p.add_argument("--readme", action="store_true", help="only the README images, into docs/readme")
     args = p.parse_args()
     url = args.url.rstrip("/")
+    if args.readme:
+        if not url:
+            raise SystemExit("--readme needs --url (the live service)")
+        readme_shots(url, Path(args.out or Path(__file__).parents[1] / "docs" / "readme"))
+        return
     if not url:
         serve_simulation(args.port)
         url = f"http://127.0.0.1:{args.port}"

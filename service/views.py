@@ -71,6 +71,7 @@ EVIDENCE_TONE = {
     "found": Badge("critical", "alert", "found"), "drift": Badge("warning", "alert", "drift"),
     "incomplete": Badge("warning", "alert", "incomplete"), "reroute": Badge("warning", "reroute", "reroute"),
     "canceled": Badge("warning", "alert", "canceled"),
+    "changes requested": Badge("warning", "alert", "changes requested"),
 }
 
 
@@ -144,16 +145,17 @@ class Track:
 
 
 def _regressed_station(run: Run) -> str | None:
-    """The station the run was at when the rewind began, or None if it had already shipped (a manual undo)."""
+    """Where production broke: the release, when the rewind began while releasing. None for an undo someone asked
+    for after the run had finished (shipped, failed or blocked)."""
     events = run.timeline
     first = next((i for i, ev in enumerate(events) if ev.state == "rewinding"), None)
     if not first:
         return None
     for ev in reversed(events[:first]):
-        if ev.state == "shipped":
+        if ev.state in TERMINAL:
             return None
         if ev.state in STATE_STATION:
-            return STATE_STATION[ev.state]
+            return STATE_STATION[ev.state] if ev.state == "releasing" else None
     return None
 
 
@@ -209,7 +211,7 @@ def _mark_rewind(track: Track, run: Run, order: list[str]) -> None:
         if i == 0:
             st.status, st.note = "restored", "restored here"
         elif i < stop:
-            st.status = "undone"
+            st.status = "undone" if st.at else "pending"  # only what actually happened was rolled back
         elif i == stop:
             st.status, st.note = "regressed", "production regressed"
         else:

@@ -24,7 +24,7 @@
     </div>
   </section>
 
-  {% if run.error %}
+  {% if run.error and run.state.value != "rewound" %}
   <div class="alert tone-critical" role="status">
     <span class="i">{{ m.icon(badges[run.state.value].icon, 18) }}</span>
     <div class="alert-body">
@@ -48,6 +48,7 @@
       <section class="card card-pad rewind-card" aria-labelledby="rw-h">
         <header><h2 id="rw-h"><span class="h-ico">{{ m.icon("rewind", 16) }}</span>Rewind <span class="mono muted small">{{ report.id }}</span></h2>
           <span class="muted small">{{ report.reason }}</span></header>
+        {% if run.error %}<p class="muted small" style="margin:-4px 0 14px">Before the rewind, the run had stopped: {{ run.error }}</p>{% endif %}
         <div class="kpis">
           <div class="tile" style="padding:0"><span class="label">Production mitigated</span>
             <span class="value">{% if report.mitigated_after_s is not none %}{{ report.mitigated_after_s | duration }}{% else %}—{% endif %}</span>

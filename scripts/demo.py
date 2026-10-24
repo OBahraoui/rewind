@@ -2,7 +2,8 @@
 """Open a demo scenario as a GitLab issue, labelled for the hands-off loop.
 
   python scripts/demo.py ship      # bulk discount: ships to production
-  python scripts/demo.py rewind    # launch promo: breaks production, gets rewound
+  python scripts/demo.py review    # launch promo: Duo review requests changes, the agent fixes them, it ships
+  python scripts/demo.py rewind    # flash sale signed off by the business: breaks production, gets rewound
   python scripts/demo.py block     # email receipts: blocked by the reversibility gate
   python scripts/demo.py ship --no-label   # create the issue, label it yourself on camera
   python scripts/demo.py rewind --watch    # ...and follow the run live in this terminal
@@ -16,7 +17,8 @@ from pathlib import Path
 from rewind.config import Settings
 from rewind.gitlab import GitLabClient
 
-SCENARIOS = {"ship": "01-bulk-discount.md", "rewind": "02-launch-promo.md", "block": "03-email-receipts.md"}
+SCENARIOS = {"ship": "01-bulk-discount.md", "review": "02-launch-promo.md", "rewind": "04-weekend-flash-sale.md",
+             "block": "03-email-receipts.md"}
 
 
 def main() -> None:

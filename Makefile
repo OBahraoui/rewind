@@ -24,14 +24,20 @@ simulate: ## Run all scenarios offline and serve the dashboard on :8080
 screenshots: ## Screenshot every page (URL=https://... for the live service) into docs/screenshots
 	$(PY) scripts/screenshots.py --out docs/screenshots $(if $(URL),--url $(URL),)
 
+readme-images: ## Refresh the README images from the live service (the newest real rewind and the overview)
+	set -a; . ./.env; set +a; $(PY) scripts/screenshots.py --readme --url "$${URL:-$$REWIND_PUBLIC_URL}"
+
 design-check: ## Run impeccable's design detector over every rendered page and state
 	$(PY) scripts/design_check.py
 
 doctor: ## Check configuration and access
 	.venv/bin/rewind doctor
 
-demo-rewind: ## Open the promo issue and follow the run (production breaks, Rewind restores it)
+demo-rewind: ## Open the flash-sale issue and follow the run (production breaks, Rewind restores it)
 	$(PY) scripts/demo.py rewind --watch
+
+demo-review: ## Open the launch-promo issue and follow the run (Duo review requests changes, the agent fixes them)
+	$(PY) scripts/demo.py review --watch
 
 demo-ship: ## Open the bulk-discount issue and follow the run (ships to production)
 	$(PY) scripts/demo.py ship --watch
@@ -51,7 +57,10 @@ watch: ## Follow a run: make watch RUN=<run id or issue number>
 ship: ## Check, sync with GitLab, push and redeploy (refuses while a run is in progress)
 	./scripts/ship.sh
 
+release: ## Tag and publish the submitted version (after the video link is in the README): make release VERSION=1.0.0
+	set -a; . ./.env; set +a; $(PY) scripts/release.py --version $${VERSION:-1.0.0}
+
 deploy: ## Redeploy the Rewind service only
 	CLOUDSDK_ACTIVE_CONFIG_NAME=rewind ./infra/deploy-rewind.sh
 
-.PHONY: help setup check property integration simulate screenshots design-check doctor demo-rewind demo-ship demo-block rerun stop-all watch ship deploy
+.PHONY: help setup check property integration simulate screenshots readme-images design-check doctor demo-rewind demo-review demo-ship demo-block rerun stop-all watch ship release deploy

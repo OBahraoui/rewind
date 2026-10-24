@@ -251,3 +251,28 @@ def test_formatters():
     assert views.duration(None) == "—"
     assert views.conds({"state": "merged", "protected": True}) == "state = merged, protected = true"
     assert views.ago(utcnow()) == "just now"
+
+
+def test_track_undo_of_a_failed_run_rolls_back_only_what_happened():
+    states = ["queued", "planning", "developing", "gating", "testing", "reviewing", "merging", "failed",
+              "rewinding", "rewound"]
+    t = views.run_track(make_run(states, "rewound"))
+    assert statuses(t) == ["restored"] + ["undone"] * 6 + ["pending"]  # release was never reached
+    assert t.returns_from == 8 and not any(s.note == "production regressed" for s in t.stations)
+
+
+def test_an_undone_blocked_run_shows_its_failure_as_history_not_an_alert():
+    tmp = tempfile.mkdtemp()
+    app, gl, cr = simulate.build(tmp)
+    run = simulate.run_scenario(app, gl, cr, "Receipts", "return subtotal(lines)", monitor_ok=True,
+                                extra={"app/receipts.py": "import httpx\n"})
+    assert run.state is RunState.BLOCKED
+    gl.members[42] = 30
+    reply = app.state.orchestrator.command(text="/rewind", author_id=42, author="dev", issue_iid=run.issue_iid)
+    assert "Rewound run" in reply
+    with TestClient(app) as client:
+        html = client.get(f"/runs/{run.id}").text
+    strict_parse(html)
+    assert 'class="alert tone-critical"' not in html and "stays open and unmerged" not in html
+    assert "Before the rewind, the run had stopped: Reversibility gate blocked" in html
+    assert 'class="station regressed"' not in html  # an undo someone asked for: nothing "regressed"

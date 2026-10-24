@@ -59,6 +59,18 @@ Rework the change on branch {branch} (push to the same branch, do not open a new
 {RULES}"""
 
 
+def review_fix(mr_iid: int, branch: str, comments: list[str]) -> str:
+    said = "\n\n".join("> " + c.replace("\n", "\n> ") for c in comments) or "> (see the merge request's review)"
+    return f"""GitLab Duo code review requested changes on merge request !{mr_iid}. What the reviewer said:
+
+{said}
+
+Address every point on branch {branch} (push to the same branch, do not open a new merge request). Change the
+code and the tests; never weaken a test to make it pass. The change will be gated, tested and reviewed again.
+
+{RULES}"""
+
+
 def fix(mr_iid: int, branch: str, pipeline_url: str) -> str:
     return f"""The pipeline for merge request !{mr_iid} failed: {pipeline_url}
 Find the failing jobs, fix the cause on branch {branch} (push to the same branch), and keep tests meaningful:

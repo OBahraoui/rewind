@@ -1,6 +1,26 @@
-<p align="center"><img src="docs/brand/rewind-icon.svg" width="96" height="96" alt="Rewind logo"></p>
+<p align="center"><img src="docs/brand/rewind-icon.svg" width="88" height="88" alt=""></p>
 
-# Rewind — Ctrl+Z for autonomous software delivery
+<h1 align="center">Rewind</h1>
+
+<p align="center"><b>Ctrl+Z for autonomous software delivery on GitLab.</b><br>
+Agents ship anything Rewind can undo. If production regresses, the agent's whole change set goes back in seconds,
+verified with zero drift.</p>
+
+<p align="center">
+  <a href="https://rewind-twegh4u3wa-ew.a.run.app"><b>Live dashboard</b></a> ·
+  <a href="https://rewind-demo-production-twegh4u3wa-ew.a.run.app">Demo storefront</a> ·
+  <a href="https://rewind-twegh4u3wa-ew.a.run.app/policy">Reversibility policy</a> ·
+  <a href="#how-the-hands-off-loop-works">How it works</a> ·
+  <a href="LICENSE">MIT license</a>
+  <!-- DEMO-VIDEO: add " · <a href="https://youtu.be/...">Demo video</a>" here before submitting -->
+</p>
+
+<p align="center"><img src="docs/readme/rewound-run.png" width="880"
+  alt="A rewound run: the release regressed, everything after the checkpoint was rolled back, and Rewind verified zero drift"></p>
+<p align="center"><sub>A run Rewind undid: the release regressed (✕), everything after the checkpoint was rolled back, and
+the project was verified against the checkpoint again.</sub></p>
+
+## Why
 
 Agents can now take an issue all the way to production on GitLab. But when an agent gets it
 wrong at 2 a.m., there is no undo for *what the agent did*: the merge, the flag it switched
@@ -20,9 +40,10 @@ Autonomy is set by reversibility, not by a fixed approval level.
   mitigation order. Traffic and flags go first (seconds), then code, then the paper trail.
   It then **verifies zero drift** against the checkpoint, and the rewind can itself be undone.
 
-> The demo: an agent ships a pricing promo to production hands-off, monitoring catches
-> negative prices, and the merge, the flag, the deploy and the issue state all go back to the
-> checkpoint. Traffic recovers in seconds, verified with zero drift.
+> The demo: an agent ships a weekend flash sale the business signed off on, hands-off. Production
+> monitoring catches orders charged below the margin guardrail, and the merge, the flag, the deploy
+> and the issue state all go back to the checkpoint. Traffic recovers in seconds, verified with zero
+> drift. On another issue, Duo code review catches a bug in the code and the agent fixes it before merge.
 
 ## Who it's for
 
@@ -30,6 +51,11 @@ Platform and DevEx teams at GitLab Premium/Ultimate companies who want to give a
 autonomy but can't accept irreversible mistakes. The pitch is concrete: **more autonomy, same risk.**
 
 ## Architecture
+
+<p align="center"><img src="docs/readme/architecture.png" width="900"
+  alt="Rewind checkpoints the project before Duo agent flows act, gates the merge request by reversibility, merges the exact gated commit and watches the release. When production monitoring fails it undoes the change set in mitigation order: traffic first, then the flag, code, merge request and issue, then verifies zero drift."></p>
+
+<details><summary>The same diagram as text</summary>
 
 ```mermaid
 flowchart LR
@@ -48,6 +74,8 @@ flowchart LR
   R -- "ledger" --> I
   R --- GCS[("GCS: snapshots,<br/>runs, reports")]
 ```
+
+</details>
 
 Rewind runs **outside** the agents. It works through GitLab's public APIs and Cloud Run's
 Admin API, so it doesn't depend on any experimental agent feature to undo what agents did.
@@ -74,7 +102,7 @@ Admin API, so it doesn't depend on any experimental agent feature to undo what a
    - *allow*: everything is undoable.
    - *reroute*: e.g. the live pricing path was changed, so the agent is told to move it behind the flag. Then it's gated again.
    - *block*: e.g. new code calls an external service. The run stops for a human.
-6. **Verify, secure, review**: the MR pipeline runs tests, SAST, dependency, secret and container scanning, plus Rewind's own gate as a [CI/CD component](#use-the-gate-in-any-project). If it fails, the fix-pipeline flow gets bounded attempts. If the scanners find something in files *this change* touched, Rewind sends the findings back to an agent to fix. Every new commit is gated again. Duo code review follows.
+6. **Verify, secure, review**: the MR pipeline runs tests, SAST, dependency, secret and container scanning, plus Rewind's own gate as a [CI/CD component](#use-the-gate-in-any-project). If it fails, the fix-pipeline flow gets bounded attempts. If the scanners find something in files *this change* touched, Rewind sends the findings back to an agent to fix. Every new commit is gated again. Duo code review follows. If the reviewer requests changes, the developer agent addresses them and the new commit is gated, tested and reviewed again. Rewind never dismisses a review: if changes are still requested, the run stops for a human, quoting the reviewer.
 7. **Merge**: Rewind merges with `sha=<gated head>`, so a commit the gate never saw can't slip in.
 8. **Release**: package → staging (deploy, apply flags, smoke) → production → `configure` (apply `config/flags.yaml`) → `monitor` (3 minutes of synthetic traffic plus business invariants) → GitLab release.
 9. **Rewind**: if anything fails after merge, Rewind undoes the change set:
@@ -192,11 +220,12 @@ tighter developer flow). Then re-run `./infra/deploy-rewind.sh`.
 
 ```bash
 python scripts/demo.py ship      # bulk discount → ships to production hands-off
-python scripts/demo.py rewind    # "$15 off every order" → monitor catches negative prices → rewound
+python scripts/demo.py review    # "$15 off every order" → Duo review requests changes → the agent fixes them → ships
+python scripts/demo.py rewind    # weekend flash sale the business signed off → production monitoring fails → rewound
 python scripts/demo.py block     # "email a receipt" → external side effect → blocked by the gate
 ```
 
-Watch the ledger fill in on the issue, or open the dashboard at `REWIND_PUBLIC_URL`. The demo app's storefront (its production URL) shows what production charges for sample baskets, live. During the promo bug a $4 tea shows **-$11.00**; after the rewind it's back to $4.00, and the page says how long prices were broken.
+Watch the ledger fill in on the issue, or open the dashboard at `REWIND_PUBLIC_URL`. The demo app's storefront (its production URL) shows what production charges for sample baskets, live. During the flash sale a $4 tea is charged **$0.00**, below the margin guardrail production monitoring enforces; after the rewind it's back to $4.00, and the page says how long prices were broken.
 
 Don't push to `main` while a run is in progress: Rewind will stop the run, because its change set is no longer attributable.
 
@@ -246,7 +275,9 @@ make check         # lint + all tests (engine, gate, property, orchestrator, HTT
 make simulate      # the whole loop offline, with realistic timings; dashboard on :8080
 make screenshots   # every page in light, dark and phone (URL=... for the live service)
 make design-check  # design detector over every page and state, storefront included (needs Node; slow)
-make demo-rewind   # open a demo issue and follow its run live in the terminal (also demo-ship, demo-block)
+make readme-images # refresh the README's screenshots from the live service (the newest real rewind)
+make release       # tag and publish the submitted version as a GitLab release, after readiness checks
+make demo-rewind   # open a demo issue and follow its run live in the terminal (also demo-review, demo-ship, demo-block)
 make watch RUN=2   # follow any run by id or issue number
 make ship          # lint, test, rebase onto GitLab, push, redeploy (refuses while a run is in progress)
 ```

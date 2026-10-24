@@ -291,7 +291,7 @@ class FakeGitLab:
         sha = self.branches[m["source_branch"]]["sha"] if m["source_branch"] in self.branches else m.get("sha")
         draft = bool(re.match(r"^\s*(\[draft\]|\(draft\)|draft:)", m["title"], re.IGNORECASE))
         return {**m, "iid": iid, "sha": sha, "draft": draft,
-                "detailed_merge_status": "draft_status" if draft else "mergeable",
+                "detailed_merge_status": "draft_status" if draft else m.get("review_status") or "mergeable",
                 "web_url": f"https://gitlab.example/acme/shop/-/merge_requests/{iid}"}
 
     @locked
@@ -343,7 +343,7 @@ class FakeGitLab:
                             should_remove_source_branch: bool = True) -> dict:
         self._record("merge_merge_request", iid, sha=sha)
         m = self.mrs[iid]
-        if m["state"] != "opened" or self._mr_json(iid)["draft"]:
+        if m["state"] != "opened" or self._mr_json(iid)["draft"] or m.get("review_status"):
             raise ApiError("PUT", "merge", 405, "Method Not Allowed")
         src = self.branches[m["source_branch"]]["sha"]
         if sha and sha != src:
@@ -374,6 +374,15 @@ class FakeGitLab:
     @locked
     def list_mr_notes(self, iid: int) -> list[dict]:
         return list(self.mr_notes.get(iid, []))
+
+    @locked
+    def review(self, iid: int, comments: list[str], *, request_changes: bool) -> None:
+        """Duo code review leaves its comments; requested changes block the merge until a later review clears them."""
+        duo = {"id": 99, "username": "GitLabDuo", "name": "GitLab Duo"}
+        for body in comments:
+            self.mr_notes.setdefault(iid, []).append({"id": next(self._seq), "body": body, "author": duo,
+                                                      "created_at": now(), "system": False})
+        self.mrs[iid]["review_status"] = "requested_changes" if request_changes else None
 
     @locked
     def create_mr_note(self, iid: int, body: str) -> dict:

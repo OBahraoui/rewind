@@ -57,6 +57,7 @@ Push to the default branch. The pipeline deploys the demo app to staging and pro
 ## 6. Rehearse (each run costs credits: budget ~3–4 flows per run)
 ```bash
 make demo-rewind   # do this FIRST on a fresh state: new_pricing must be off in production
+make demo-review
 make demo-ship
 make demo-block
 ```
@@ -78,3 +79,13 @@ instead: that's a careful agent, not a Rewind bug. Re-label the issue, or use `/
 ## 7. Record (see docs/demo-script.md), then freeze
 After submitting, do not push to the project until winners are announced (~16 Nov). Keep the
 Rewind service and both Cloud Run environments running.
+
+## Before submitting
+
+1. Record the demo runs (`make demo-rewind`, `make rerun ISSUE=5`, `make rerun ISSUE=6`) and the video.
+2. `make readme-images`: the README's screenshot becomes the newest real rewind on the live service.
+3. Put the video link in the README (replace the `DEMO-VIDEO` comment at the top), commit, `make ship`.
+4. `make release`: checks everything is pushed, no run is in progress and the README is ready, then tags
+   `rewind-1.0.0` and publishes the GitLab release with `docs/release-notes.md`.
+5. Submit on Devpost with `docs/brand/rewind-thumbnail.png`. Don't change the repository after the deadline.
+

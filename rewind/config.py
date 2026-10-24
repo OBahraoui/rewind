@@ -82,6 +82,7 @@ class Settings:
 
     flows: dict[str, FlowRef] = field(default_factory=dict)
     max_fix_attempts: int = 2
+    max_review_fix_attempts: int = 1  # times the developer agent addresses a review's requested changes
     max_flows_per_day: int = 25  # credit guard: flows Rewind may start per UTC day
 
     gcp_project: str = ""
@@ -125,6 +126,7 @@ class Settings:
             tick_seconds=int(_env("REWIND_TICK_SECONDS", "15") or 15),
             flows=flows,
             max_fix_attempts=int(_env("REWIND_MAX_FIX_ATTEMPTS", "2") or 2),
+            max_review_fix_attempts=int(_env("REWIND_MAX_REVIEW_FIX_ATTEMPTS", "1") or 1),
             max_flows_per_day=int(_env("REWIND_MAX_FLOWS_PER_DAY", "25") or 25),
             gcp_project=_env("GCP_PROJECT_ID"),
             gcp_region=_env("GCP_REGION", "europe-west1"),
