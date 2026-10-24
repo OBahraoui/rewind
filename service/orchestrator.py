@@ -76,8 +76,7 @@ MERGE_WAITS = {"not_approved": "it needs approval from a human reviewer",
                "security_policy_violations": "a security policy blocks it",
                "status_checks_must_pass": "external status checks haven't passed",
                "ci_must_pass": "its pipeline must pass", "ci_still_running": "its pipeline is still running",
-               "checking": "GitLab is still checking it", "unchecked": "GitLab is still checking it",
-               "requested_changes": "the code review's requested changes still block it"}
+               "checking": "GitLab is still checking it", "unchecked": "GitLab is still checking it"}
 
 # Pipeline stage -> DevSecOps lifecycle stage, for evidence links.
 STAGE_MAP = {"verify": "verify", "package": "package", "secure": "secure", "test": "secure",
@@ -425,11 +424,7 @@ class Orchestrator:
             self._pipeline_evidence(run, pipeline, {"verify", "secure", "package"})
             if self._security_gate(run, mr, pipeline):
                 return
-            accepted = self._review_accepted(run, run.gated_sha)
-            if accepted:
-                run.move(RunState.MERGING, f"MR pipeline green; {accepted.by} accepted the code review's concerns "
-                                           f"for {run.gated_sha[:8]}, so it isn't reviewed again")
-            elif self.flows.enabled("review"):
+            if self.flows.enabled("review"):
                 flow = self._start_flow(run, "review", goals.review(run.mr_iid), mr_iid=run.mr_iid)
                 if flow:
                     run.move(RunState.REVIEWING, f"MR pipeline green; code review flow #{flow.workflow_id} started")
@@ -497,12 +492,6 @@ class Orchestrator:
         if status != "done":
             self._block(run, f"{STEP_LABEL.get(step, step)} ended with {status}")
             return
-        if step == "reviewfix":
-            mr = self.gitlab.get_merge_request(run.mr_iid)
-            if mr and mr["sha"] == run.gated_sha:  # reviewing the same commit again would only cost credits
-                self._review_needs_human(run, f"Duo code review requests changes on MR !{run.mr_iid} that the "
-                                              f"agent couldn't address (it pushed no change)")
-                return
         run.move(RunState.GATING, "fix pushed; any new commit is gated again")
 
     def _on_reviewing(self, run: Run) -> None:
@@ -525,11 +514,7 @@ class Orchestrator:
             return
         merge_status = mr.get("detailed_merge_status") or ""
         if merge_status == "requested_changes":
-            accepted = self._review_accepted(run, mr["sha"])
-            if accepted:
-                self._lift_review_block(run, mr, accepted)
-            else:
-                self._address_review(run, mr)
+            self._address_review(run, mr)
             return
         if merge_status in MERGE_WAITS and run.extra.get("merge_waiting") != merge_status:
             run.extra["merge_waiting"] = merge_status
@@ -569,42 +554,10 @@ class Orchestrator:
                 run.move(RunState.FIXING, f"code review requested changes; review-fix flow #{flow.workflow_id} "
                                           f"started")
             return
-        self._review_needs_human(run, f"Duo code review still requests changes on MR !{run.mr_iid} after "
-                                      f"{attempts} agent fix attempt(s)", comments)
-
-    def _review_needs_human(self, run: Run, why: str, comments: list[str] | None = None) -> None:
-        """Stop for a human, in the reviewer's words. Only an authenticated approval can accept its concerns."""
-        comments = self._review_comments(run) if comments is None else comments
-        said = re.split(r"(?<=[.!?])\s", " ".join(comments[0].split()), maxsplit=1)[0] if comments else ""
-        run.extra["blocked_by"] = "review"
         self._label(run, add=["rewind:needs-human"])
-        self._block(run, why + (f": {said}" if said else "") + " A human can accept its concerns for this commit "
-                    "with `rewind approve`.")
-
-    def _review_accepted(self, run: Run, sha: str) -> Approval | None:
-        return run.approval_for(sha, {f"review|{sha}"}) if sha else None
-
-    def _lift_review_block(self, run: Run, mr: dict, approval: Approval) -> None:
-        """A named human accepted the review's concerns for this commit: unassign the reviewer who requested
-        changes (their comments stay), so GitLab lets the merge through. Done once; if GitLab still blocks it,
-        the run says so."""
-        if run.extra.get("review_unassigned") == mr["sha"]:
-            if run.extra.get("merge_waiting") != "requested_changes":
-                run.extra["merge_waiting"] = "requested_changes"
-                run.note(f"waiting to merge: {MERGE_WAITS['requested_changes']}")
-            return
-        reviewers = self.gitlab.merge_request_reviewers(run.mr_iid)
-        blocking = [r["user"] for r in reviewers if r.get("state") == "requested_changes"]
-        keep = [r["user"]["id"] for r in reviewers if r.get("state") != "requested_changes"]
-        self.gitlab.update_merge_request(run.mr_iid, reviewer_ids=keep or [0])
-        run.extra["review_unassigned"] = mr["sha"]
-        names = ", ".join(f"@{u['username']}" for u in blocking) or "the reviewer"
-        run.note(f"{approval.by} accepted the code review's concerns for {mr['sha'][:8]}; unassigned {names} so "
-                 f"the merge can go ahead")
-        self.gitlab.create_mr_note(run.mr_iid, f"⏪ **{approval.by}** accepted the code review's open concerns for "
-                                               f"commit `{mr['sha'][:8]}` only: {approval.reason}\n\nRewind "
-                                               f"unassigned {names} as reviewer so the merge can go ahead. The "
-                                               f"review's comments stay on this merge request.")
+        said = re.split(r"(?<=[.!?])\s", " ".join(comments[0].split()), maxsplit=1)[0] if comments else ""
+        self._block(run, f"Duo code review still requests changes on MR !{run.mr_iid} after {attempts} agent "
+                         f"fix attempt(s)" + (f": {said}" if said else ""))
 
     def _review_comments(self, run: Run) -> list[str]:
         """What the reviewer wrote during the latest review, oldest first (Rewind's own notes left out)."""
@@ -918,8 +871,7 @@ class Orchestrator:
             return run
 
     def approve(self, run_id: str, *, by: str, reason: str) -> Run:
-        """A human accepts what the gate could not allow, or a code review's open concerns, for the MR's current
-        head only."""
+        """A human accepts what the gate could not allow, for the MR's current head only."""
         if not reason.strip():
             raise ValueError("an approval needs a reason")
         with self._run_lock(run_id, blocking=True) as acquired:
@@ -934,17 +886,12 @@ class Orchestrator:
             if not mr or mr["state"] != "opened":
                 raise ValueError(f"MR !{run.mr_iid} is not open")
             covers = gate_fingerprints(run.gate) | security_fingerprints(run.security_findings)
-            # (runs blocked before blocked_by was recorded say so in their error)
-            review = run.extra.pop("blocked_by", "") == "review" or "code review" in (run.error or "")
-            if review:
-                covers.add(f"review|{mr['sha']}")
             run.approvals.append(Approval(by=by, reason=reason.strip(), sha=mr["sha"], covers=sorted(covers)))
             run.error = None
             self._label(run, add=[LABELS["running"]], remove=[LABELS["blocked"]])
             run.move(RunState.GATING, f"{by} accepted the risk for {mr['sha'][:8]}: {reason.strip()}")
-            what = "the code review's open concerns" if review else "what Rewind can't undo in this change"
-            self.gitlab.create_mr_note(run.mr_iid, f"⏪ **{by}** accepted {what}, for commit `{mr['sha'][:8]}` only: "
-                                                   f"{reason.strip()}")
+            self.gitlab.create_mr_note(run.mr_iid, f"⏪ **{by}** accepted what Rewind can't undo in this change, for "
+                                                   f"commit `{mr['sha'][:8]}` only: {reason.strip()}")
             self.repo.save(run)
             self._publish(run)
         self.advance(run_id)

@@ -334,11 +334,6 @@ class FakeGitLab:
             m["labels"] = sorted(set(m["labels"]) | set(fields.pop("add_labels").split(",")))
         if "remove_labels" in fields:
             m["labels"] = sorted(set(m["labels"]) - set(fields.pop("remove_labels").split(",")))
-        if "reviewer_ids" in fields:  # unassigning the reviewer who requested changes lifts their block
-            keep = set(fields.pop("reviewer_ids")) - {0}
-            m["reviewers"] = [u for u in m.get("reviewers", []) if u["id"] in keep]
-            if not any(m.get("review_states", {}).get(u["id"]) == "requested_changes" for u in m["reviewers"]):
-                m["review_status"] = None
         m.update(fields)
         m["updated_at"] = now()
         return self._mr_json(iid)
@@ -387,16 +382,7 @@ class FakeGitLab:
         for body in comments:
             self.mr_notes.setdefault(iid, []).append({"id": next(self._seq), "body": body, "author": duo,
                                                       "created_at": now(), "system": False})
-        m = self.mrs[iid]
-        m["reviewers"] = [duo]
-        m["review_states"] = {duo["id"]: "requested_changes" if request_changes else "approved"}
-        m["review_status"] = "requested_changes" if request_changes else None
-
-    @locked
-    def merge_request_reviewers(self, iid: int) -> list[dict]:
-        m = self.mrs[iid]
-        return [{"user": u, "state": m.get("review_states", {}).get(u["id"], "unreviewed")}
-                for u in m.get("reviewers", [])]
+        self.mrs[iid]["review_status"] = "requested_changes" if request_changes else None
 
     @locked
     def create_mr_note(self, iid: int, body: str) -> dict:

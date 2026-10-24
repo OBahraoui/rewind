@@ -169,10 +169,6 @@ class GitLabClient:
             body["merge_commit_message"] = merge_commit_message
         return self._api.json("PUT", f"{self._p}/merge_requests/{iid}/merge", json=body)
 
-    def merge_request_reviewers(self, iid: int) -> list[dict]:
-        """Each reviewer with their review state (e.g. requested_changes, approved)."""
-        return self._api.json("GET", f"{self._p}/merge_requests/{iid}/reviewers")
-
     def list_mr_notes(self, iid: int) -> list[dict]:
         return self._paginate(f"{self._p}/merge_requests/{iid}/notes", sort="asc")
 
