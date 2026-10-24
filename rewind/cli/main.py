@@ -422,10 +422,10 @@ def spike(trigger: Annotated[bool, typer.Option(help="Actually start a flow (use
 
 @app.command()
 def approve(run_id: str,
-            reason: Annotated[str, typer.Option(help="Why a human accepts what Rewind can't undo")],
+            reason: Annotated[str, typer.Option(help="Why you accept what Rewind can't undo, or a review's concerns")],
             by: Annotated[str, typer.Option(help="Your name, recorded in the ledger")] = os.environ.get("USER", "")
             ) -> None:
-    """Accept a blocked run's irreversible change, for the MR's current commit only.
+    """Accept a blocked run's irreversible change or its code review's concerns, for the MR's current commit only.
 
     Deliberately not a comment command: agents comment with your identity.
     """
