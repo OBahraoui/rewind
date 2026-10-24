@@ -4,7 +4,6 @@
 {% block content %}
 <div class="stack">
   <section class="hero">
-    <span class="eyebrow">Governance</span>
     <h1>Reversibility policy</h1>
     <p class="lede">Autonomy is set by reversibility, not by a fixed approval level. This is the policy in force for this
       project, read live from <code>rewind/policy.yaml</code>. Agents may not edit it: it is a protected path.</p>
@@ -34,7 +33,7 @@
         {{ m.badge(gate_badges[r.verdict]) }} <b class="mono small">{{ r.id }}</b>
         <div class="k" style="margin-top:6px">{{ r.paths | join(", ") }}</div>
         <p>{{ r.reason }}</p>
-        {% if r.instruction %}<p class="muted">What the agent is told to do instead: {{ r.instruction | replace("`", "") }}</p>{% endif %}
+        {% if r.instruction %}<p class="muted">{% if r.verdict == "reroute" %}What the agent is told to do instead{% else %}How to ship it safely{% endif %}: {{ r.instruction | replace("`", "") }}</p>{% endif %}
       </div>
       {% endfor %}
       <div class="card rule">

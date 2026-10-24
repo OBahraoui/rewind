@@ -3,10 +3,10 @@
 {% block content %}
 <div class="stack" {% if ov.active %}data-live="/api/version" data-version="{{ version }}" data-interval="5000"{% endif %}>
   <section class="hero">
-    <span class="eyebrow">{% if ov.active %}<span class="live-dot">Live · a run is in progress</span>{% else %}Control room{% endif %}</span>
     <h1>Agents ship to production.<br>Rewind keeps every change undoable.</h1>
     <p class="lede">Every run is checkpointed before agents act, gated by reversibility before merge, and undone as one
       change set if production regresses. Then Rewind proves it: the project is compared with the checkpoint again.</p>
+    {% if ov.active %}<p><span class="live-dot">Live · {{ ov.active | length }} run{{ "s" if ov.active | length != 1 }} in progress, updating automatically</span></p>{% endif %}
   </section>
 
   <section aria-label="Key numbers">
@@ -22,9 +22,9 @@
         <span class="context">verified against the checkpoint</span>
       </div>
       <div class="card tile">
-        <span class="label">Fastest production mitigation</span>
+        <span class="label">Fastest mitigation</span>
         <span class="value">{{ ov.fastest_mitigation_s | duration }}</span>
-        <span class="context">traffic and flags back to the checkpoint</span>
+        <span class="context">production traffic and flags back to the checkpoint</span>
       </div>
       <div class="card tile">
         <span class="label">Median full restore</span>
@@ -32,9 +32,9 @@
         <span class="context">code, releases and records included</span>
       </div>
       <div class="card tile">
-        <span class="label">Credit guard</span>
+        <span class="label">Agent flows today</span>
         <span class="value">{{ ov.flows_today }}<small>/ {{ ov.flow_limit }}</small></span>
-        <span class="context">agent flows started today</span>
+        <span class="context">credit guard: no new flows past the daily limit</span>
         <div class="meter{% if ov.flow_pct >= 80 %} high{% endif %}" role="meter" aria-valuemin="0" aria-valuemax="{{ ov.flow_limit }}" aria-valuenow="{{ ov.flows_today }}" aria-label="Flows started today"><span style="width: {{ ov.flow_pct }}%"></span></div>
       </div>
     </div>
@@ -44,8 +44,8 @@
   <section class="card card-pad" aria-label="Run in progress">
     <header>
       <div>
-        <span class="eyebrow">Now running · <span data-since="{{ run.created_at | iso }}">{{ (run.created_at | iso) }}</span></span>
-        <h2 style="margin-top:4px"><a href="/runs/{{ run.id }}">#{{ run.issue_iid }} {{ run.issue_title }}</a></h2>
+        <h2><a href="/runs/{{ run.id }}">#{{ run.issue_iid }} {{ run.issue_title }}</a></h2>
+        <p class="muted small" style="margin-top:2px">Running for <span data-since="{{ run.created_at | iso }}">{{ run.created_at | iso }}</span></p>
       </div>
       {{ m.badge(badges[run.state.value], "live") }}
     </header>
@@ -57,10 +57,13 @@
   <section aria-labelledby="runs-h">
     <header><h2 id="runs-h">Runs</h2><span class="muted small">{{ runs | length }} total · newest first</span></header>
     {% if runs %}
+    <div class="legend key" aria-label="How changes are classified">
+      {% for cls, b in class_badges.items() %}<span>{{ m.badge(b) }} {{ class_help[cls] }}</span>{% endfor %}
+    </div>
     <div class="card table-wrap">
       <table class="table">
         <thead><tr><th scope="col">Issue</th><th scope="col">Outcome</th><th scope="col">Gate</th>
-          <th scope="col" class="hide-sm">Change set</th><th scope="col" class="hide-sm">Duration</th><th scope="col">Updated</th></tr></thead>
+          <th scope="col" class="hide-sm">Change set</th><th scope="col" class="hide-sm">Duration</th><th scope="col" class="hide-sm">Updated</th></tr></thead>
         <tbody>
         {% for r in runs %}
           <tr>
@@ -71,7 +74,7 @@
             <td>{% if r.gate %}{{ m.badge(gate_badges[r.gate]) }}{% else %}<span class="muted">—</span>{% endif %}</td>
             <td class="hide-sm">{% if r.counts %}{{ m.class_chips(r.counts, class_badges) }}{% else %}<span class="muted">—</span>{% endif %}</td>
             <td class="num hide-sm">{{ r | run_duration | duration }}</td>
-            <td class="num"><span data-ago="{{ r.updated_at }}">{{ r.updated_at | ago }}</span></td>
+            <td class="num hide-sm"><span data-ago="{{ r.updated_at }}">{{ r.updated_at | ago }}</span></td>
           </tr>
         {% endfor %}
         </tbody>
@@ -86,8 +89,5 @@
     {% endif %}
   </section>
 
-  <section aria-label="Reversibility classes" class="legend">
-    {% for cls, b in class_badges.items() %}<span>{{ m.badge(b) }} {{ class_help[cls] }}</span>{% endfor %}
-  </section>
 </div>
 {% endblock %}

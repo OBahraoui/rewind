@@ -638,7 +638,8 @@ def gate(base: Annotated[str, typer.Option(help="Base commit (e.g. $CI_MERGE_REQ
         where = f" {f.path}{':' + str(f.line) if f.line else ''}" if f.path else ""
         typer.echo(f"  - {f.rule_id}{where}: {f.message}")
         if f.instruction:
-            typer.echo(f"    how to make it undoable: {f.instruction}")
+            how = "how to ship it safely" if f.verdict == "block" else "how to make it undoable"
+            typer.echo(f"    {how}: {f.instruction}")
     if decision.verdict == "allow":
         typer.echo("  Everything this change ships can be undone by Rewind.")
     failing = {"block": {"block"}, "reroute": {"block", "reroute"}}.get(fail_on, {"block"})

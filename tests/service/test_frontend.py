@@ -93,21 +93,50 @@ def test_version_endpoints_track_changes(world):
 
 def test_html_404_and_json_404(world):
     page = world.get("/runs/nope", headers={"accept": "text/html"})
-    assert page.status_code == 404 and "Nothing here" in page.text
+    assert page.status_code == 404 and "Nothing here" in page.text and "<code>nope</code>" in page.text
     strict_parse(page.text)
     assert world.get("/api/rewinds/nope").json() == {"detail": "rewind not found"}
 
 
 def test_rewound_page_shows_the_arc_timeline_and_zero_drift(world):
     html = world.get(pages(world)["run-rewound"]).text
-    assert 'class="track has-arc"' in html and "back to checkpoint in" in html
+    assert 'class="track has-arc rolled"' in html and "Back to the checkpoint in" in html
     assert 'class="tl"' in html and "production mitigated" in html and "Zero drift" in html
+    # where production broke is on the track, and what came after the checkpoint reads as rolled back
+    assert 'class="station regressed"' in html and "production regressed" in html
+    assert 'class="station undone"' in html and 'class="station restored"' in html
+    assert "Undo this rewind" in html and "rewind to pre_" in html
+
+
+def test_shipped_page_says_how_to_undo(world):
+    html = world.get(pages(world)["run-shipped"]).text
+    assert "Undo this run" in html and 'data-copy="/rewind"' in html
+    assert "Undo only part of this run" in html and "rewind to step_" in html
+
+
+def test_live_page_says_how_to_stop(world):
+    html = world.get(pages(world)["run-developing"]).text
+    assert "Stop this run" in html and 'data-copy="/rewind stop"' in html and 'data-announce=' in html
+
+
+def test_lifecycle_strip_shows_the_failed_monitor_on_a_rewound_run(world):
+    html = world.get(pages(world)["run-rewound"]).text
+    assert 'class="stage tone-critical"' in html
+
+
+def test_no_unicode_status_glyphs_in_pages(world):
+    for name, path in pages(world).items():
+        html = world.get(path).text
+        assert not re.search("[⟲⊘↺⇄◷◎↪]", html), name  # icons are drawn, not borrowed from a font
 
 
 def test_blocked_page_explains_the_finding(world):
     html = world.get(pages(world)["run-blocked"]).text
     assert "external-side-effect" in html and "app/receipts.py" in html
     assert 'class="station stopped"' in html
+    # reassurance, a way forward, and no "irreversible: none" under an irreversible block
+    assert "production is untouched" in html and "What happens next" in html and "rewind approve run_" in html
+    assert "Stopped before it happened" in html and "How to ship it safely" in html
 
 
 def test_static_assets_are_cache_busted(world):
@@ -116,6 +145,7 @@ def test_static_assets_are_cache_busted(world):
     assert f"/static/app.js?v={v}" in html
     assert world.get("/static/style.css").status_code == 200
     assert world.get("/static/app.js").status_code == 200
+    assert f'href="/static/icon.svg?v={v}"' in html and world.get("/static/icon.svg").status_code == 200
 
 
 def test_storefront_is_valid_and_self_contained():
@@ -124,6 +154,8 @@ def test_storefront_is_valid_and_self_contained():
     strict_parse(PAGE)
     assert not re.search(r'(?:src|href)="https?://', PAGE)  # no external resources at all
     assert "orders/quote" in PAGE and "below cost" in PAGE
+    assert "Guardrail: no order is ever charged less than half its subtotal." in PAGE
+    assert 'id="announce" aria-live' in PAGE and 'class="ribbon" role="status"' not in PAGE  # announce changes only
 
 
 # -- view models ---------------------------------------------------------------
@@ -158,8 +190,27 @@ def test_track_rewound_draws_the_arc():
     report = RewindReport(id="rw", project_id="1", checkpoint_id="cp_1", started_at=t0,
                           finished_at=t0 + timedelta(seconds=7.4), verification=Verification(ok=True, snapshot_id="s"))
     t = views.run_track(make_run(states, "rewound"), report)
-    assert all(s == "done" for s in statuses(t)) and t.rewound
-    assert t.arc_label == "back to checkpoint in 7.4s · zero drift"
+    assert statuses(t) == ["restored"] + ["undone"] * 6 + ["regressed"] and t.rewound
+    assert t.returns_from == 7 and t.stations[7].note == "production regressed"
+    assert t.arc_label == "Back to the checkpoint in 7.4s · zero drift"
+    assert t.arc_x == pytest.approx((7.5 / 9 * 100, .5 / 9 * 100))
+
+
+def test_track_manual_undo_after_ship_rolls_back_everything():
+    states = ["queued", "planning", "developing", "gating", "testing", "reviewing", "merging", "releasing",
+              "shipped", "rewinding", "rewound"]
+    t = views.run_track(make_run(states, "rewound"))
+    assert statuses(t) == ["restored"] + ["undone"] * 7 and t.returns_from == 8  # the arc starts at the outcome
+
+
+def test_stage_cells_flag_failed_evidence():
+    from rewind.runs import Evidence
+    ev = [Evidence(stage="monitor", name="monitor:production", status="failed"),
+          Evidence(stage="monitor", name="Rewind rw", status="zero drift"),
+          Evidence(stage="secure", name="scan", status="incomplete"), Evidence(stage="plan", name="p", status="done")]
+    cells = {c.stage: c for c in views.stage_cells(["plan", "secure", "monitor", "govern"], ev)}
+    assert cells["monitor"].attention.tone == "critical" and cells["secure"].attention.tone == "warning"
+    assert cells["plan"].attention is None and len(cells["plan"].items) == 1 and not cells["govern"].items
 
 
 def test_queued_without_checkpoint_is_current():

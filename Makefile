@@ -24,6 +24,9 @@ simulate: ## Run all scenarios offline and serve the dashboard on :8080
 screenshots: ## Screenshot every page (URL=https://... for the live service) into docs/screenshots
 	$(PY) scripts/screenshots.py --out docs/screenshots $(if $(URL),--url $(URL),)
 
+design-check: ## Run impeccable's design detector over every rendered page and state
+	$(PY) scripts/design_check.py
+
 doctor: ## Check configuration and access
 	.venv/bin/rewind doctor
 
@@ -51,4 +54,4 @@ ship: ## Check, sync with GitLab, push and redeploy (refuses while a run is in p
 deploy: ## Redeploy the Rewind service only
 	CLOUDSDK_ACTIVE_CONFIG_NAME=rewind ./infra/deploy-rewind.sh
 
-.PHONY: help setup check property integration simulate screenshots doctor demo-rewind demo-ship demo-block rerun stop-all watch ship deploy
+.PHONY: help setup check property integration simulate screenshots design-check doctor demo-rewind demo-ship demo-block rerun stop-all watch ship deploy

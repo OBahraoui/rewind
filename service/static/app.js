@@ -50,29 +50,72 @@
   tick();
   setInterval(tick, 1000);
 
-  // -- live: reload only when the server says something changed -----------------
-  const live = document.querySelector("[data-live]");
-  if (live) {
-    const url = live.dataset.live;
-    let version = live.dataset.version;
-    const SCROLL = "rewind-scroll:" + location.pathname;
+  // -- copy buttons --------------------------------------------------------------
+  document.addEventListener("click", async (e) => {
+    const btn = e.target.closest("[data-copy]");
+    if (!btn) return;
     try {
-      const y = sessionStorage.getItem(SCROLL);
-      if (y) { window.scrollTo(0, +y); sessionStorage.removeItem(SCROLL); }
-    } catch { /* ignore */ }
-    const poll = async () => {
-      if (document.hidden) return;
-      try {
-        const res = await fetch(url, { cache: "no-store" });
-        if (!res.ok) return;
-        const body = await res.json();
-        if (body.version && body.version !== version) {
-          version = body.version;
-          try { sessionStorage.setItem(SCROLL, String(window.scrollY)); } catch { /* ignore */ }
-          location.reload();
-        }
-      } catch { /* offline: try again next time */ }
-    };
-    setInterval(poll, +(live.dataset.interval || 4000));
+      await navigator.clipboard.writeText(btn.dataset.copy);
+    } catch {
+      const sel = window.getSelection(), range = document.createRange();
+      range.selectNodeContents(btn.previousElementSibling);
+      sel.removeAllRanges(); sel.addRange(range);
+      return; // selected for the user to copy by hand
+    }
+    btn.classList.add("done");
+    announce("Copied to the clipboard");
+    setTimeout(() => btn.classList.remove("done"), 1600);
+  });
+
+  // -- live: when the server says something changed, swap the page in place --------
+  // No reload: scroll, focus, open sections and the screen reader's place survive; the change is announced once.
+  const announcer = document.getElementById("live-announce");
+  function announce(text) {
+    if (!announcer || !text) return;
+    announcer.textContent = "";
+    setTimeout(() => { announcer.textContent = text; }, 50);
   }
+  const focusKey = (el) => {
+    if (!el || el === document.body) return null;
+    if (el.id) return `#${CSS.escape(el.id)}`;
+    if (el.dataset.copy) return `[data-copy="${CSS.escape(el.dataset.copy)}"]`;
+    const href = el.getAttribute("href");
+    return href ? `a[href="${CSS.escape(href)}"]` : null;
+  };
+  async function swap() {
+    const res = await fetch(location.href, { cache: "no-store", headers: { accept: "text/html" } });
+    if (!res.ok) return false;
+    const doc = new DOMParser().parseFromString(await res.text(), "text/html");
+    const fresh = doc.querySelector("main"), main = document.querySelector("main");
+    if (!fresh || !main) return false;
+    const key = focusKey(document.activeElement);
+    const open = new Set([...main.querySelectorAll("details[open] > summary")].map((s) => s.textContent.trim()));
+    main.replaceChildren(...[...fresh.childNodes].map((n) => document.importNode(n, true)));
+    main.querySelectorAll("details > summary").forEach((s) => { if (open.has(s.textContent.trim())) s.parentElement.open = true; });
+    document.title = doc.title;
+    if (key) main.querySelector(key)?.focus({ preventScroll: true });
+    tick();
+    const next = main.querySelector("[data-live]");
+    const desc = doc.querySelector('meta[name="description"]')?.content || "";
+    announce(next?.dataset.announce || (next ? "Runs updated" : desc));
+    return true;
+  }
+  let version = document.querySelector("[data-live]")?.dataset.version;
+  async function poll() {
+    const live = document.querySelector("[data-live]");
+    if (!live) return; // the run finished: nothing more will change
+    setTimeout(poll, +(live.dataset.interval || 4000));
+    if (document.hidden) return;
+    try {
+      const res = await fetch(live.dataset.live, { cache: "no-store" });
+      if (!res.ok) return;
+      const body = await res.json();
+      if (body.version && body.version !== version) {
+        version = body.version;
+        if (!(await swap())) location.reload();
+      }
+    } catch { /* offline: try again next time */ }
+  }
+  const first = document.querySelector("[data-live]");
+  if (first) setTimeout(poll, +(first.dataset.interval || 4000));
 })();

@@ -1,4 +1,6 @@
-# ⏪ Rewind — Ctrl+Z for autonomous software delivery
+<p align="center"><img src="docs/brand/rewind-icon.svg" width="96" height="96" alt="Rewind logo"></p>
+
+# Rewind — Ctrl+Z for autonomous software delivery
 
 Agents can now take an issue all the way to production on GitLab. But when an agent gets it
 wrong at 2 a.m., there is no undo for *what the agent did*: the merge, the flag it switched
@@ -194,7 +196,7 @@ python scripts/demo.py rewind    # "$15 off every order" → monitor catches neg
 python scripts/demo.py block     # "email a receipt" → external side effect → blocked by the gate
 ```
 
-Watch the ledger fill in on the issue, or open the dashboard at `REWIND_PUBLIC_URL`. The demo app's storefront (its production URL) shows what production charges for sample baskets, live. During the promo bug a $4 tea shows **-$11.00**, and after the rewind it's back to $4.00.
+Watch the ledger fill in on the issue, or open the dashboard at `REWIND_PUBLIC_URL`. The demo app's storefront (its production URL) shows what production charges for sample baskets, live. During the promo bug a $4 tea shows **-$11.00**; after the rewind it's back to $4.00, and the page says how long prices were broken.
 
 Don't push to `main` while a run is in progress: Rewind will stop the run, because its change set is no longer attributable.
 
@@ -243,13 +245,15 @@ make help          # every task
 make check         # lint + all tests (engine, gate, property, orchestrator, HTTP, frontend, CI scripts, app)
 make simulate      # the whole loop offline, with realistic timings; dashboard on :8080
 make screenshots   # every page in light, dark and phone (URL=... for the live service)
+make design-check  # design detector over every page and state, storefront included (needs Node; slow)
 make demo-rewind   # open a demo issue and follow its run live in the terminal (also demo-ship, demo-block)
 make watch RUN=2   # follow any run by id or issue number
 make ship          # lint, test, rebase onto GitLab, push, redeploy (refuses while a run is in progress)
 ```
 
 The dashboard has an overview with a live spotlight on the run in progress, a page per run, and the policy page:
-- **The page per run** shows the run's track from checkpoint to outcome, with an arc back to the checkpoint when rewound. It also has the nine-stage evidence, the gate, the change set with provenance, the rewind's timeline, and the agent sessions.
+- **The page per run** shows the run's track from checkpoint to outcome. When rewound, it marks the station where production regressed, strikes through what was rolled back, and draws an arc back to the checkpoint. It also has the gate (with what happens next when it blocks), the change set with provenance, the rewind's timeline, the nine-stage evidence, and the agent sessions.
+- **Every run says how to act on it:** the `/rewind` comment that undoes it, the `/rewind stop` that halts it, or the command that undoes a rewind, each ready to copy. The dashboard itself stays read-only.
 - **The policy page** shows the policy in force.
 
 It works in light and dark, at any width down to a phone, with live updates and no build step. Every page is checked as strict HTML5 in the test suite.

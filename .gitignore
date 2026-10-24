@@ -19,3 +19,10 @@ gcp-key*.json
 # Private planning notes, not part of the submission
 Rewind — Build Plan*.pdf
 .hypothesis/
+
+# Local design tooling (impeccable skills and hooks): used while building, not part of Rewind
+.agents/
+.claude/
+.codex/
+.cursor/
+.impeccable/

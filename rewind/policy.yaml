@@ -131,6 +131,7 @@ gate:
       added_must_not_match: '\b(requests|httpx|aiohttp|urllib3?|urlopen|http\.client|smtplib|socket|boto3|grpc)\b|\bsend_(email|sms|notification)\b'
       verdict: block
       reason: "New code reaches an external system. Messages and calls that leave the system cannot be recalled."
+      instruction: "Write the message to a queue or outbox instead of sending it, so the code stays undoable; sending becomes a separate step a human approves once."
 
     - id: default-path-frozen
       paths: ["app/pricing.py"]

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="Rewind">
+  <circle cx="7" cy="24" r="5" fill="#9b8fff"/>
+  <path d="M27 8 14 24l13 16h7L21 24 34 8z" fill="#9b8fff"/>
+  <path d="M41 8 28 24l13 16h7L35 24 48 8z" fill="#9b8fff" opacity=".5"/>
+</svg>

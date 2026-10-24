@@ -14,14 +14,14 @@ PAGE = """<!doctype html>
 <style>
 :root {
   color-scheme: light;
-  --bg: #f7f2ea; --card: #fffdf9; --ink: #2a1d14; --ink-2: #5e4b3d; --ink-3: #8f7b6b; --line: #e8dfd2;
+  --bg: #f7f2ea; --card: #fffdf9; --ink: #2a1d14; --ink-2: #5e4b3d; --ink-3: #75614f; --line: #e8dfd2;
   --brand: #7a4528; --brand-ink: #fff; --ribbon: #1e1813; --ribbon-ink: #efe6db;
-  --ok: #0ca30c; --ok-tint: #e6f4e2; --bad: #d03b3b; --bad-tint: #fbe4e1; --bad-ink: #9e2323;
+  --ok: #0ca30c; --ok-ink: #1e7a1e; --ok-tint: #e6f4e2; --bad: #d03b3b; --bad-tint: #fbe4e1; --bad-ink: #9e2323;
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 @media (prefers-color-scheme: dark) {
   :root { color-scheme: dark; --bg: #15110d; --card: #1e1915; --ink: #f3ebe1; --ink-2: #cdbfb1; --ink-3: #998877;
-    --line: #2f2822; --brand: #d0905f; --brand-ink: #1a120c; --ribbon: #0b0907; --ok-tint: #15301a;
+    --line: #2f2822; --brand: #d0905f; --brand-ink: #1a120c; --ribbon: #0b0907; --ok-ink: #4cc34c; --ok-tint: #15301a;
     --bad-tint: #3a1918; --bad-ink: #ff9b8f; }
 }
 * { box-sizing: border-box; }
@@ -34,8 +34,9 @@ body { margin: 0; background: var(--bg); color: var(--ink); line-height: 1.5; }
 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); margin-right: 6px; }
 .dot.bad { background: var(--bad); }
 .pill { padding: 1px 8px; border-radius: 99px; background: rgb(255 255 255 / 10%); }
-.pill.on { background: #5b4bdb; color: #fff; }
-header.brand { max-width: 1080px; margin: 0 auto; padding: 28px 20px 8px; display: flex; align-items: center; gap: 14px; }
+.pill.on { background: #a8673f; color: #fff; }
+header.brand { max-width: 1080px; margin: 0 auto; padding: 28px 20px 8px; display: flex; align-items: flex-start; gap: 14px; }
+.logo { flex: none; margin-top: 2px; }
 .logo { width: 42px; height: 42px; border-radius: 12px; background: var(--brand); display: grid; place-items: center; }
 .brand h1 { margin: 0; font-family: ui-serif, Georgia, "Times New Roman", serif; font-size: 1.6rem; letter-spacing: -.01em; }
 .brand p { margin: 0; color: var(--ink-3); font-size: .9rem; }
@@ -66,9 +67,13 @@ td.total { font-size: 1.6rem; font-weight: 700; letter-spacing: -.02em; }
 td.total.bad { color: var(--bad); }
 .items { font-size: .82rem; color: var(--ink-3); }
 .tag { font-size: .75rem; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--line); color: var(--ink-2); white-space: nowrap; }
-.tag.new { border-color: #5b4bdb; color: #5b4bdb; }
+.tag.new { border-color: var(--brand); color: var(--brand); }
 .status { font-size: .8rem; font-weight: 600; white-space: nowrap; }
-.status.ok { color: var(--ok); } .status.bad { color: var(--bad); }
+.status.ok { color: var(--ok-ink); } .status.bad { color: var(--bad-ink); }
+.amt { white-space: nowrap; }
+.panel.recovered .verdict { background: var(--ok-tint); }
+.guard { padding: 10px 20px; font-size: .8rem; color: var(--ink-3); border-top: 1px solid var(--line); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 footer { max-width: 1080px; margin: 0 auto; padding: 0 20px 40px; color: var(--ink-3); font-size: .8rem; }
 .flash { animation: flash .6s ease-out; }
 @keyframes flash { from { background: color-mix(in srgb, var(--bad) 22%, transparent); } }
@@ -81,9 +86,10 @@ footer { max-width: 1080px; margin: 0 auto; padding: 0 20px 40px; color: var(--i
 </style>
 </head>
 <body>
-<div class="ribbon" role="status" aria-live="polite">
+<div class="ribbon">
   <div class="in" id="ribbon"><span><span class="dot"></span>Loading production status…</span></div>
 </div>
+<p class="sr-only" id="announce" aria-live="assertive"></p>
 <header class="brand">
   <div class="logo" aria-hidden="true">
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round">
@@ -99,9 +105,10 @@ footer { max-width: 1080px; margin: 0 auto; padding: 0 20px 40px; color: var(--i
       <div class="verdict" id="verdict"><span class="icon" aria-hidden="true">✓</span><span class="big">Checking prices…</span></div>
       <table>
         <thead><tr><th scope="col">Basket</th><th scope="col" class="num hide-sm">Subtotal</th>
-          <th scope="col" class="num">Charged</th><th scope="col" class="hide-sm">Pricing</th><th scope="col">Check</th></tr></thead>
+          <th scope="col" class="num">Charged</th><th scope="col" class="hide-sm">Pricing</th><th scope="col">Margin check</th></tr></thead>
         <tbody id="quotes"></tbody>
       </table>
+      <p class="guard">Guardrail: no order is ever charged less than half its subtotal.</p>
     </div>
   </section>
   <section aria-labelledby="prod-h">
@@ -110,8 +117,7 @@ footer { max-width: 1080px; margin: 0 auto; padding: 0 20px 40px; color: var(--i
   </section>
 </main>
 <footer>Rewind demo shop. Refreshes every 2 seconds; every price comes from <code>POST /orders/quote</code> on the
-revision shown above. A total below half the subtotal means the margin guardrail is broken, and production monitoring
-will catch it.</footer>
+revision shown above, and production monitoring checks the same guardrail.</footer>
 <script>
 "use strict";
 const BASKETS = [
@@ -128,8 +134,13 @@ const ART = {
   grinder: '<path d="M7 9h10v10H7z"/><path d="M9 9V6h6v3"/><path d="M12 3v3"/><circle cx="12" cy="14" r="2"/>',
 };
 const money = (c) => (c < 0 ? "−$" : "$") + (Math.abs(c) / 100).toFixed(2);
+const amt = (c) => `<span class="amt">${money(c)}</span>`;
+const span = (s) => s < 90 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
+const clock = (d) => d.toLocaleTimeString([], {hour: "2-digit", minute: "2-digit", second: "2-digit"});
+const say = (text) => { const el = document.getElementById("announce"); el.textContent = ""; setTimeout(() => { el.textContent = text; }, 50); };
 const esc = (s) => String(s).replace(/[&<>"]/g, (ch) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[ch]));
 let lastBroken = null;
+let brokeAt = null, brokenRevision = null, recovered = null;
 async function refresh() {
   try {
     const health = await (await fetch("health", {cache: "no-store"})).json();
@@ -137,10 +148,6 @@ async function refresh() {
     const flagHtml = flags.length ? flags.map(([k, v]) => `<span class="pill${v ? " on" : ""}">${esc(k)}: ${v ? "on" : "off"}</span>`).join(" ")
       : '<span class="pill">no flags on</span>';
     const flagsOk = (health.flags_status || "ok") === "ok" || health.flags_status === "unconfigured";
-    document.getElementById("ribbon").innerHTML =
-      `<span><span class="dot${flagsOk ? "" : " bad"}"></span><b>${esc(health.environment)}</b></span>` +
-      `<span>revision <span class="mono">${esc(health.revision)}</span></span>` +
-      `<span>version <span class="mono">${esc(health.version)}</span></span><span>flags ${flagHtml}</span>`;
     const products = await (await fetch("products", {cache: "no-store"})).json();
     document.getElementById("products").innerHTML = Object.entries(products).map(([sku, p]) =>
       `<div class="product"><div class="art" aria-hidden="true"><svg width="44" height="44" viewBox="0 0 24 24" fill="none"
@@ -158,22 +165,42 @@ async function refresh() {
       const list = items.map(([sku, n]) => `${n} × ${esc((products[sku] || {}).name || sku)}`).join(", ");
       return `<tr><td><div>${esc(name)}</div><div class="items">${list}</div></td>
         <td class="num hide-sm">${money(q.subtotal_cents)}</td>
-        <td class="num total${bad ? " bad" : ""}">${money(q.total_cents)}</td>
+        <td class="num total${bad ? " bad" : ""}">${amt(q.total_cents)}</td>
         <td class="hide-sm"><span class="tag${q.pricing === "new" ? " new" : ""}">${q.pricing === "new" ? "new pricing" : "standard"}</span></td>
-        <td><span class="status ${bad ? "bad" : "ok"}">${bad ? "✕ below cost" : "✓ ok"}</span></td></tr>`;
+        <td><span class="status ${bad ? "bad" : "ok"}">${bad ? "✕ below cost" : "✓ within guardrail"}</span></td></tr>`;
     }).join("");
+    const broken = !!worst;
+    document.getElementById("ribbon").innerHTML =
+      `<span><span class="dot${flagsOk && !broken ? "" : " bad"}"></span><b>${esc(health.environment)}</b>${broken ? " · pricing broken" : ""}</span>` +
+      `<span>revision <span class="mono">${esc(health.revision)}</span></span>` +
+      `<span>version <span class="mono">${esc(health.version)}</span></span><span>flags ${flagHtml}</span>`;
     const panel = document.getElementById("panel");
     const verdict = document.getElementById("verdict");
-    panel.classList.toggle("bad", !!worst);
-    if (worst) {
-      verdict.innerHTML = `<span class="icon" aria-hidden="true">✕</span><span class="big">A ${money(worst.subtotal_cents)} order is being charged ${money(worst.total_cents)}
-        <small>Production is pricing below cost. Monitoring will catch this and Rewind will undo the release.</small></span>`;
+    if (broken && !lastBroken) { brokeAt = new Date(); brokenRevision = health.revision; recovered = null; }
+    if (!broken && lastBroken) {
+      const secs = Math.max(1, Math.round((Date.now() - brokeAt) / 1000));
+      recovered = {at: new Date(), secs, revision: health.revision, from: brokenRevision};
+    }
+    panel.classList.toggle("bad", broken);
+    panel.classList.toggle("recovered", !broken && !!recovered);
+    if (broken) {
+      verdict.innerHTML = `<span class="icon" aria-hidden="true">✕</span><span class="big">A ${amt(worst.subtotal_cents)} order is being charged ${amt(worst.total_cents)}
+        <small>Production is pricing below cost since ${clock(brokeAt)}. Monitoring will catch this and Rewind will undo the release.</small></span>`;
+    } else if (recovered) {
+      const moved = recovered.from && recovered.from !== recovered.revision
+        ? ` Production moved from revision <span class="amt">${esc(recovered.from)}</span> to <span class="amt">${esc(recovered.revision)}</span>.` : "";
+      verdict.innerHTML = `<span class="icon" aria-hidden="true">✓</span><span class="big">Prices recovered after ${span(recovered.secs)}
+        <small>Broken from ${clock(brokeAt)} to ${clock(recovered.at)}.${moved} Every basket is within the guardrail again.</small></span>`;
     } else {
       verdict.innerHTML = `<span class="icon" aria-hidden="true">✓</span><span class="big">Prices are healthy
         <small>Every basket is within the margin guardrail.</small></span>`;
     }
-    if (lastBroken !== null && lastBroken !== !!worst) { panel.classList.remove("flash"); void panel.offsetWidth; panel.classList.add("flash"); }
-    lastBroken = !!worst;
+    if (lastBroken !== null && lastBroken !== broken) {
+      panel.classList.remove("flash"); void panel.offsetWidth; panel.classList.add("flash");
+      say(broken ? `Pricing broken: a ${money(worst.subtotal_cents)} order is charged ${money(worst.total_cents)}`
+                 : `Prices recovered after ${span(recovered.secs)}`);
+    }
+    lastBroken = broken;
   } catch (e) {
     document.getElementById("ribbon").innerHTML = `<span><span class="dot bad"></span>Production unreachable: ${esc(e.message || e)}</span>`;
   }

@@ -20,32 +20,32 @@ TERMINAL = {"shipped", "rewound", "blocked", "failed"}
 @dataclass
 class Badge:
     tone: str  # good | warning | critical | info | neutral | accent
-    icon: str
+    icon: str  # a name from the icon set in _macros.html
     label: str
 
 
 OUTCOME_BADGE = {
-    "queued": Badge("neutral", "◷", "Queued"),
-    "planning": Badge("info", "●", "Planning"),
-    "developing": Badge("info", "●", "Developing"),
-    "gating": Badge("info", "●", "Gating"),
-    "rerouting": Badge("warning", "↪", "Rerouting"),
-    "testing": Badge("info", "●", "Verifying"),
-    "fixing": Badge("warning", "●", "Fixing"),
-    "reviewing": Badge("info", "●", "In review"),
-    "merging": Badge("info", "●", "Merging"),
-    "releasing": Badge("info", "●", "Releasing"),
-    "rewinding": Badge("accent", "⟲", "Rewinding"),
-    "shipped": Badge("good", "✓", "Shipped"),
-    "rewound": Badge("accent", "⟲", "Rewound"),
-    "blocked": Badge("critical", "⊘", "Blocked"),
-    "failed": Badge("critical", "✕", "Failed"),
+    "queued": Badge("neutral", "clock", "Queued"),
+    "planning": Badge("info", "dot", "Planning"),
+    "developing": Badge("info", "dot", "Developing"),
+    "gating": Badge("info", "dot", "Gating"),
+    "rerouting": Badge("warning", "reroute", "Rerouting"),
+    "testing": Badge("info", "dot", "Verifying"),
+    "fixing": Badge("warning", "dot", "Fixing"),
+    "reviewing": Badge("info", "dot", "In review"),
+    "merging": Badge("info", "dot", "Merging"),
+    "releasing": Badge("info", "dot", "Releasing"),
+    "rewinding": Badge("accent", "rewind", "Rewinding"),
+    "shipped": Badge("good", "check", "Shipped"),
+    "rewound": Badge("accent", "rewind", "Rewound"),
+    "blocked": Badge("critical", "ban", "Blocked"),
+    "failed": Badge("critical", "x", "Failed"),
 }
 
 CLASS_BADGE = {
-    Reversibility.REVERSIBLE: Badge("good", "↺", "Reversible"),
-    Reversibility.COMPENSATABLE: Badge("warning", "⇄", "Compensatable"),
-    Reversibility.IRREVERSIBLE: Badge("critical", "⊘", "Irreversible"),
+    Reversibility.REVERSIBLE: Badge("good", "undo", "Reversible"),
+    Reversibility.COMPENSATABLE: Badge("warning", "swap", "Compensatable"),
+    Reversibility.IRREVERSIBLE: Badge("critical", "ban", "Irreversible"),
 }
 CLASS_HELP = {
     Reversibility.REVERSIBLE: "Rewind restores these exactly.",
@@ -54,17 +54,47 @@ CLASS_HELP = {
 }
 
 OUTCOME_TONE = {
-    Outcome.RESTORED: Badge("good", "✓", "restored"),
-    Outcome.COMPENSATED: Badge("good", "✓", "compensated"),
-    Outcome.ALREADY: Badge("neutral", "=", "already"),
-    Outcome.CONFLICT: Badge("warning", "!", "conflict"),
-    Outcome.FAILED: Badge("critical", "✕", "failed"),
-    Outcome.IRREVERSIBLE: Badge("critical", "⊘", "irreversible"),
-    Outcome.PLANNED: Badge("info", "·", "planned"),
+    Outcome.RESTORED: Badge("good", "check", "restored"),
+    Outcome.COMPENSATED: Badge("good", "check", "compensated"),
+    Outcome.ALREADY: Badge("neutral", "equal", "already"),
+    Outcome.CONFLICT: Badge("warning", "alert", "conflict"),
+    Outcome.FAILED: Badge("critical", "x", "failed"),
+    Outcome.IRREVERSIBLE: Badge("critical", "ban", "irreversible"),
+    Outcome.PLANNED: Badge("info", "dot", "planned"),
 }
 
-GATE_BADGE = {"allow": Badge("good", "✓", "Allow"), "reroute": Badge("warning", "↪", "Reroute"),
-              "block": Badge("critical", "⊘", "Block")}
+GATE_BADGE = {"allow": Badge("good", "check", "Allow"), "reroute": Badge("warning", "reroute", "Reroute"),
+              "block": Badge("critical", "ban", "Block")}
+
+EVIDENCE_TONE = {
+    "failed": Badge("critical", "x", "failed"), "block": Badge("critical", "ban", "block"),
+    "found": Badge("critical", "alert", "found"), "drift": Badge("warning", "alert", "drift"),
+    "incomplete": Badge("warning", "alert", "incomplete"), "reroute": Badge("warning", "reroute", "reroute"),
+    "canceled": Badge("warning", "alert", "canceled"),
+}
+
+
+def evidence_badge(status: str) -> Badge | None:
+    """A tone for evidence that needs attention; passing evidence stays plain text."""
+    return EVIDENCE_TONE.get(status.lower())
+
+
+@dataclass
+class StageCell:
+    stage: str
+    items: list[Any]
+    attention: Badge | None  # the most serious evidence in this stage, if any needs attention
+
+
+def stage_cells(stages: list[str], evidence: list[Any]) -> list[StageCell]:
+    """The lifecycle strip: a stage with a failed check reads as failed, not as covered."""
+    rank = {"critical": 2, "warning": 1}
+    cells = []
+    for st in stages:
+        items = [e for e in evidence if e.stage == st]
+        flagged = [b for b in (evidence_badge(e.status) for e in items) if b]
+        cells.append(StageCell(st, items, max(flagged, key=lambda b: rank.get(b.tone, 0), default=None)))
+    return cells
 
 # The hands-off loop as stations on a track. A run state maps to the station it is at.
 STATIONS = [
@@ -89,8 +119,11 @@ class Station:
     key: str
     label: str
     help: str
-    status: str = "pending"  # done | current | stopped | pending
+    # done | current | stopped | pending, and after a rewind: restored (the checkpoint it went back to),
+    # undone (happened, then rolled back) and regressed (where production broke)
+    status: str = "pending"
     at: datetime | None = None
+    note: str = ""
 
 
 @dataclass
@@ -100,6 +133,28 @@ class Track:
     outcome_at: datetime | None = None
     rewound: bool = False
     arc_label: str = ""
+    returns_from: int | None = None  # station index the rewind arc starts from (len(stations) = the outcome)
+
+    @property
+    def arc_x(self) -> tuple[float, float]:
+        """Start and end of the rewind arc, as % of the track width (station centres on a 9-column grid)."""
+        cols = len(self.stations) + 1
+        start = self.returns_from if self.returns_from is not None else cols - 1
+        return (start + .5) / cols * 100, .5 / cols * 100
+
+
+def _regressed_station(run: Run) -> str | None:
+    """The station the run was at when the rewind began, or None if it had already shipped (a manual undo)."""
+    events = run.timeline
+    first = next((i for i, ev in enumerate(events) if ev.state == "rewinding"), None)
+    if not first:
+        return None
+    for ev in reversed(events[:first]):
+        if ev.state == "shipped":
+            return None
+        if ev.state in STATE_STATION:
+            return STATE_STATION[ev.state]
+    return None
 
 
 def run_track(run: Run, report: RewindReport | None = None) -> Track:
@@ -133,15 +188,33 @@ def run_track(run: Run, report: RewindReport | None = None) -> Track:
     if terminal:
         track.outcome = OUTCOME_BADGE[state]
         track.outcome_at = run.updated_at
+    if state in ("rewound", "rewinding"):
+        _mark_rewind(track, run, order)
     if state == "rewound":
         track.rewound = True
         if report and report.finished_at:
             total = (report.finished_at - report.started_at).total_seconds()
             drift = "zero drift" if report.zero_drift else "drift found"
-            track.arc_label = f"back to checkpoint in {total:.1f}s · {drift}"
+            track.arc_label = f"Back to the checkpoint in {total:.1f}s · {drift}"
         else:
-            track.arc_label = "back to the checkpoint"
+            track.arc_label = "Back to the checkpoint"
     return track
+
+
+def _mark_rewind(track: Track, run: Run, order: list[str]) -> None:
+    """Show where production broke and what the rewind took back, so a rewound run never reads as shipped."""
+    regressed = _regressed_station(run)
+    stop = order.index(regressed) if regressed else len(order)
+    for i, st in enumerate(track.stations):
+        if i == 0:
+            st.status, st.note = "restored", "restored here"
+        elif i < stop:
+            st.status = "undone"
+        elif i == stop:
+            st.status, st.note = "regressed", "production regressed"
+        else:
+            st.status = "pending"
+    track.returns_from = stop
 
 
 @dataclass
@@ -187,11 +260,11 @@ def rewind_timeline(report: RewindReport) -> Timeline | None:
                                 max(pct(end) - pct(start), 0.6), s.duration_ms / 1000, tone.tone, tone.icon))
     if first_start and first_start > 0.05:
         segments.insert(0, Segment("Pre-rewind checkpoint", f"snapshot so this rewind can be undone · "
-                                   f"{first_start:.1f}s", 0.0, pct(first_start), first_start, "neutral", "◷"))
+                                   f"{first_start:.1f}s", 0.0, pct(first_start), first_start, "neutral", "clock"))
     if total - last_end > 0.05:
         segments.append(Segment("Verification", f"re-snapshot and compare with the checkpoint · "
                                 f"{total - last_end:.1f}s", pct(last_end), pct(total) - pct(last_end),
-                                total - last_end, "neutral", "◎"))
+                                total - last_end, "neutral", "target"))
     step = _nice_step(total)
     ticks = [(pct(t), f"{t:g}s") for t in _frange(0, total, step)]
     mit = report.mitigated_after_s

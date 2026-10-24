@@ -1,12 +1,38 @@
+{# Rewind's mark: two chevrons running back to a checkpoint (docs/brand has the files). #}
 {% macro logo(size=28) -%}
-<svg width="{{ size }}" height="{{ size }}" viewBox="0 0 32 32" aria-hidden="true">
-  <rect width="32" height="32" rx="9" fill="var(--accent)"/>
-  <path d="M15 10.5v11l-7.5-5.5z M24.5 10.5v11L17 16z" fill="#fff"/>
+<svg class="mark" width="{{ size }}" height="{{ size }}" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+  <circle cx="7" cy="24" r="5" fill="var(--accent)"/>
+  <path d="M27 8 14 24l13 16h7L21 24 34 8z" fill="var(--accent)"/>
+  <path d="M41 8 28 24l13 16h7L35 24 48 8z" fill="var(--accent)" opacity=".5"/>
 </svg>
 {%- endmacro %}
 
+{# One drawn icon set, one stroke weight: status never depends on which glyphs a font happens to have. #}
+{% macro icon(name, size=14) -%}
+{%- set paths = {
+  "check": '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  "x": '<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>',
+  "ban": '<circle cx="12" cy="12" r="8.5"/><path d="M6 18L18 6"/>',
+  "rewind": '<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4 4.5v4.5h4.5"/>',
+  "undo": '<path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
+  "swap": '<path d="M4 8h15M15 4l4 4-4 4"/><path d="M20 16H5M9 12l-4 4 4 4"/>',
+  "reroute": '<path d="M4 19v-5a6 6 0 0 1 6-6h10"/><path d="M16 4l4 4-4 4"/>',
+  "clock": '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+  "dot": '<circle cx="12" cy="12" r="4.5" fill="currentColor" stroke="none"/>',
+  "equal": '<path d="M6 9.5h12M6 14.5h12"/>',
+  "alert": '<path d="M12 3.5l9.5 16.5h-19z"/><path d="M12 10v4"/><circle cx="12" cy="17" r=".6" fill="currentColor"/>',
+  "target": '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.5"/>',
+  "arrow-left": '<path d="M19 12H5M11 6l-6 6 6 6"/>',
+  "copy": '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3"/>',
+  "comment": '<path d="M5 5h14a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1h-8l-5 4v-4H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/>',
+  "terminal": '<path d="M5 8l4 4-4 4M12 17h7"/>',
+  "shield": '<path d="M12 3.5l7.5 3v5.5c0 4.5-3.2 7.8-7.5 9-4.3-1.2-7.5-4.5-7.5-9V6.5z"/><path d="M8.5 12l2.5 2.5 4.5-5"/>',
+} -%}
+<svg class="ico" width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">{{ paths.get(name, paths["dot"]) | safe }}</svg>
+{%- endmacro %}
+
 {% macro badge(b, extra="") -%}
-<span class="badge tone-{{ b.tone }} {{ extra }}"><span class="i" aria-hidden="true">{{ b.icon }}</span>{{ b.label }}</span>
+<span class="badge tone-{{ b.tone }} {{ extra }}"><span class="i">{{ icon(b.icon, 12) }}</span>{{ b.label }}</span>
 {%- endmacro %}
 
 {% macro class_chips(counts, class_badge) -%}
@@ -14,36 +40,48 @@
 {%- for cls, b in class_badge.items() %}
   {%- set n = (counts or {}).get(cls.value, 0) %}
   <span class="chip tone-{{ b.tone }}{% if not n %} zero{% endif %}" title="{{ n }} {{ b.label | lower }}">
-    <span class="i" aria-hidden="true">{{ b.icon }}</span>{{ n }}<span class="sr-only"> {{ b.label | lower }}</span></span>
+    <span class="i">{{ icon(b.icon, 12) }}</span>{{ n }}<span class="sr-only"> {{ b.label | lower }}</span></span>
 {%- endfor %}
 </span>
+{%- endmacro %}
+
+{% macro copy_cmd(text, label) -%}
+<span class="cmd-row"><code class="cmd">{{ text }}</code><button class="copy" type="button" data-copy="{{ text }}" aria-label="Copy {{ label }}">{{ icon("copy", 14) }}<span class="copied" aria-hidden="true">Copied</span></button></span>
 {%- endmacro %}
 
 {% macro run_track(track) -%}
 {%- set n = track.stations | length %}
 {%- set reached = namespace(i=0) %}
 {%- for s in track.stations %}{% if s.status in ("done", "current", "stopped") %}{% set reached.i = loop.index0 %}{% endif %}{% endfor %}
-{%- set end = (n if track.outcome and track.outcome.tone != "critical" else reached.i) %}
-<div class="track{% if track.rewound %} has-arc{% endif %}" role="group" aria-label="Run progress">
+{%- if track.returns_from is not none %}{% set end = track.returns_from %}
+{%- else %}{% set end = (n if track.outcome and track.outcome.tone != "critical" else reached.i) %}{% endif %}
+{%- set says = {"done": "done", "current": "in progress", "stopped": "stopped here", "pending": "not reached",
+                "restored": "restored to this checkpoint", "undone": "rolled back by Rewind",
+                "regressed": "production regressed here"} %}
+<div class="track{% if track.rewound %} has-arc{% endif %}{% if track.returns_from is not none %} rolled{% endif %}" role="group" aria-label="Run progress"{% if track.rewound %} style="--ret: {{ track.returns_from }}"{% endif %}>
   {%- if track.rewound %}
+  {%- set xf, xc = track.arc_x %}
   <svg class="arc" viewBox="0 0 100 56" preserveAspectRatio="none" aria-hidden="true">
-    <path d="M 94.4 44 C 82 2, 18 2, 5.6 44" vector-effect="non-scaling-stroke"/>
+    <path d="M {{ '%.2f' % xf }} 50 C {{ '%.2f' % xf }} 4, {{ '%.2f' % xc }} 4, {{ '%.2f' % xc }} 41" vector-effect="non-scaling-stroke"/>
   </svg>
-  <span class="arc-head" aria-hidden="true"></span>
-  <span class="arc-label">⟲ {{ track.arc_label }}</span>
+  <span class="arc-head" aria-hidden="true" style="--x: {{ '%.2f' % xc }}"></span>
+  <span class="arc-label" style="--x: {{ '%.2f' % ((xf + xc) / 2) }}">{{ icon("rewind", 14) }}{{ track.arc_label }}</span>
   {%- endif %}
   <div class="rail">
+  {%- if track.rewound %}<span class="ret" aria-hidden="true"></span>{% endif %}
   <span class="progress" style="width: calc((100% - 100% / 9) * {{ end }} / {{ n }})" aria-hidden="true"></span>
   <ol>
     {%- for s in track.stations %}
-    <li class="station {{ s.status }}" title="{{ s.help }}">
-      <span class="node" aria-hidden="true">{% if s.status == "done" %}✓{% elif s.status == "stopped" %}✕{% endif %}</span>
-      <span class="name">{{ s.label }}<span class="sr-only">: {{ s.status }}</span></span>
-      <span class="when">{% if s.at %}{{ s.at.strftime('%H:%M:%S') }}{% else %}&nbsp;{% endif %}</span>
+    <li class="station {{ s.status }}">
+      <span class="node" aria-hidden="true" title="{{ s.help }}">
+        {%- if s.status in ("done", "undone", "restored") %}{{ icon("check", 13) }}{% elif s.status in ("stopped", "regressed") %}{{ icon("x", 13) }}{% endif -%}
+      </span>
+      <span class="name">{{ s.label }}<span class="sr-only">: {{ says[s.status] }}. {{ s.help }}.</span></span>
+      <span class="when">{% if s.at %}{{ s.at.strftime('%H:%M:%S') }}{% else %}&nbsp;{% endif %}{% if s.note %}<span class="note">{{ s.note }}</span>{% endif %}</span>
     </li>
     {%- endfor %}
     <li class="station outcome {% if track.outcome %}tone-{{ track.outcome.tone }} done{% else %}pending{% endif %}">
-      <span class="node" aria-hidden="true">{% if track.outcome %}{{ track.outcome.icon }}{% endif %}</span>
+      <span class="node" aria-hidden="true">{% if track.outcome %}{{ icon(track.outcome.icon, 15) }}{% endif %}</span>
       <span class="name">{% if track.outcome %}{{ track.outcome.label }}{% else %}Outcome{% endif %}</span>
       <span class="when">{% if track.outcome_at %}{{ track.outcome_at.strftime('%H:%M:%S') }}{% else %}&nbsp;{% endif %}</span>
     </li>
@@ -52,29 +90,31 @@
 </div>
 {%- endmacro %}
 
-{% macro stages_strip(stages, evidence) -%}
+{% macro stages_strip(cells) -%}
 <div class="stages" role="list" aria-label="DevSecOps lifecycle coverage">
-{%- for st in stages %}
-  {%- set items = evidence | selectattr("stage", "equalto", st) | list %}
-  <div class="stage{% if items %} on{% endif %}" role="listitem">
-    <div class="n">{{ st }}</div>
-    <div class="c">{% if items %}✓ {{ items | length }} evidence{% else %}—{% endif %}</div>
+{%- for c in cells %}
+  <div class="stage{% if c.attention %} tone-{{ c.attention.tone }}{% elif c.items %} on{% endif %}" role="listitem">
+    <div class="n">{{ c.stage }}</div>
+    <div class="c">
+      {%- if c.attention %}<span class="i">{{ icon(c.attention.icon, 11) }}</span> {{ c.attention.label }}
+      {%- elif c.items %}<span class="i">{{ icon("check", 11) }}</span> {{ c.items | length }}<span class="sr-only"> evidence</span>
+      {%- else %}<span aria-hidden="true">—</span><span class="sr-only">no evidence</span>{% endif -%}
+    </div>
   </div>
 {%- endfor %}
 </div>
 {%- endmacro %}
 
 {% macro rewind_chart(tl) -%}
-<div class="tl" role="img" aria-label="Rewind timeline: {{ '%.1f' % tl.total_s }} seconds in total{% if tl.mitigated_s is not none %}, production mitigated after {{ '%.1f' % tl.mitigated_s }} seconds{% endif %}">
+<div class="tl" role="img" aria-label="Rewind timeline: {{ '%.1f' % tl.total_s }} seconds in total{% if tl.mitigated_s is not none %}, production mitigated after {{ '%.1f' % tl.mitigated_s }} seconds{% endif %}. Each step is listed in the table below.">
   {%- if tl.mitigated_pct is not none %}
-  <div class="marker{% if tl.mitigated_pct > 70 %} flip{% endif %}" style="left: {{ tl.mitigated_pct }}%"><span>production mitigated · {{ '%.1f' % tl.mitigated_s }}s</span></div>
+  <div class="marker{% if tl.mitigated_pct > 50 %} flip{% endif %}" style="left: {{ tl.mitigated_pct }}%"><span>production mitigated · {{ '%.1f' % tl.mitigated_s }}s</span></div>
   {%- endif %}
   <div class="bar">
     {%- for seg in tl.segments %}
-    <button type="button" class="seg tone-{{ seg.tone }}" style="left: {{ seg.start_pct }}%; width: max(3px, calc({{ seg.width_pct }}% - 2px))"
-            aria-label="{{ seg.label }}: {{ seg.detail }}">
-      <span class="tip" role="tooltip"><b>{{ seg.icon }} {{ seg.label }}</b>{{ seg.detail }}</span>
-    </button>
+    <span class="seg tone-{{ seg.tone }}" style="left: {{ seg.start_pct }}%; width: max(3px, calc({{ seg.width_pct }}% - 2px))">
+      <span class="tip"><b>{{ icon(seg.icon, 12) }} {{ seg.label }}</b>{{ seg.detail }}</span>
+    </span>
     {%- endfor %}
   </div>
   <div class="axis" aria-hidden="true">

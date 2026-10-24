@@ -74,6 +74,7 @@ def test_external_call_blocks_the_job_with_the_line(repo):
     f = report["findings"][0]
     assert f["rule_id"] == "external-side-effect" and f["path"] == "app/notify.py" and f["line"] == 1
     assert "external-side-effect" in (repo / "r.xml").read_text()
+    assert "how to ship it safely" in result.output  # a block can't be made undoable, only shipped another way
 
 
 def test_reroute_warns_by_default_and_fails_when_asked(repo):

@@ -4,7 +4,7 @@
 <div class="card empty">
   <div class="big" aria-hidden="true">{{ m.logo(44) }}</div>
   <h1>Nothing here</h1>
-  <p class="muted">{{ detail or "That page doesn't exist." }}</p>
+  <p class="muted">{% if missing %}There's no run <code>{{ missing }}</code>. It may belong to another project, or the link is incomplete.{% else %}That page doesn't exist.{% endif %}</p>
   <p><a href="/">Back to all runs</a></p>
 </div>
 {% endblock %}

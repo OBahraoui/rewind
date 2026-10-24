@@ -86,7 +86,7 @@ def create_app(settings: Settings | None = None, *, gitlab: Any = None, cloudrun
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     app.mount("/mcp", mcp_app)
     templates = Jinja2Templates(directory=HERE / "templates")
-    for name in ("ago", "duration", "iso", "run_duration", "conds"):
+    for name in ("ago", "duration", "iso", "run_duration", "conds", "evidence_badge"):
         templates.env.filters[name] = getattr(views, name)
     # Cache-busting: the asset URL changes whenever a static file does.
     static_files = sorted((HERE / "static").iterdir())
@@ -229,7 +229,7 @@ def create_app(settings: Settings | None = None, *, gitlab: Any = None, cloudrun
         ensure_meta()
         run = repo.get(run_id)
         if not run:
-            return page(request, "404.html", status_code=404, detail=f"There's no run {run_id}.")
+            return page(request, "404.html", status_code=404, missing=run_id)
         report = None
         if run.rewind_id:
             with contextlib.suppress(RewindError):
@@ -238,8 +238,10 @@ def create_app(settings: Settings | None = None, *, gitlab: Any = None, cloudrun
         groups = cs.by_class() if cs else {r: [] for r in Reversibility}
         total_s = (report.finished_at - report.started_at).total_seconds() if report and report.finished_at else None
         covered = len({e.stage for e in run.evidence} & set(ledger.STAGES))
+        evidence = sorted(run.evidence, key=lambda e: ledger.STAGES.index(e.stage) if e.stage in ledger.STAGES else 99)
         return page(request, "run.html", nav="runs", run=run, status=ledger.status_text(run), groups=groups,
-                    change_set=cs, report=report, stages=ledger.STAGES, track=views.run_track(run, report),
+                    change_set=cs, report=report, cells=views.stage_cells(ledger.STAGES, run.evidence),
+                    evidence=evidence, track=views.run_track(run, report),
                     timeline=views.rewind_timeline(report) if report else None, total_s=total_s, covered=covered)
 
     @app.get("/policy", response_class=HTMLResponse)
@@ -256,7 +258,7 @@ def create_app(settings: Settings | None = None, *, gitlab: Any = None, cloudrun
         wants_html = "text/html" in request.headers.get("accept", "")
         if request.url.path.startswith(("/api", "/mcp", "/webhooks")) or not wants_html:
             return JSONResponse({"detail": getattr(exc, "detail", "Not Found")}, status_code=404)
-        return page(request, "404.html", status_code=404, detail=None)
+        return page(request, "404.html", status_code=404)
 
     @app.exception_handler(LockHeld)
     def _locked(_request: Request, exc: LockHeld):
