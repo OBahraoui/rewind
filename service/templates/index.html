@@ -2,15 +2,39 @@
 {% block title %}Rewind · {{ project }}{% endblock %}
 {% block content %}
 <div class="stack" {% if ov.active %}data-live="/api/version" data-version="{{ version }}" data-interval="5000"{% endif %}>
-  <section class="hero">
+  <section class="hero hero-center">
     <h1>Agents ship to production.<br>Rewind keeps every change undoable.</h1>
-    <p class="lede">Every run is checkpointed before agents act, gated by reversibility before merge, and undone as one
-      change set if production regresses. Then Rewind proves it: the project is compared with the checkpoint again.</p>
+    <p class="lede">Ctrl+Z for autonomous software delivery on GitLab. Every agent run is checkpointed, gated by
+      reversibility before merge, and undone as one change set if production regresses, then checked against the
+      checkpoint for zero drift.</p>
+    <div class="cta">
+      {% if featured %}<a class="btn primary" href="/runs/{{ featured.run.id }}">{{ m.icon("rewind", 16) }}See a real rewind</a>{% endif %}
+      <a class="btn" href="/how">How it works</a>
+    </div>
     {% if ov.active %}<p><span class="live-dot">Live · {{ ov.active | length }} run{{ "s" if ov.active | length != 1 }} in progress, updating automatically</span></p>{% endif %}
   </section>
 
+  {% if featured %}
+  <section class="card card-pad featured" aria-labelledby="feat-h">
+    <header>
+      <div>
+        <h2 id="feat-h"><a href="/runs/{{ featured.run.id }}">#{{ featured.run.issue_iid }} {{ featured.run.issue_title }}</a></h2>
+        <p class="muted small" style="margin-top:2px">A real run on this project: production regressed, and Rewind took the whole change set back.</p>
+      </div>
+      {{ m.badge(badges["rewound"]) }}
+    </header>
+    {{ m.run_track(featured.track) }}
+    <ul class="facts">
+      <li><b>{{ featured.rewind.mitigated_after_s | duration }}</b> production back</li>
+      <li><b>{{ featured.rewind.total_s | duration }}</b> everything restored</li>
+      <li><b>{{ "Zero drift" if featured.rewind.zero_drift else "Drift found" }}</b> checked against the checkpoint</li>
+      {% if featured.run.incident_iid %}<li><a href="{{ featured.run.incident_url }}">incident #{{ featured.run.incident_iid }}</a> opened and closed by Rewind</li>{% endif %}
+    </ul>
+  </section>
+  {% endif %}
+
   <section aria-label="Key numbers">
-    <div class="tiles">
+    <div class="tiles centered">
       <div class="card tile">
         <span class="label">Hands-off runs</span>
         <span class="value">{{ ov.runs }}</span>

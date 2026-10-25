@@ -225,7 +225,19 @@ def create_app(settings: Settings | None = None, *, gitlab: Any = None, cloudrun
                 spotlight.append((run, views.run_track(run)))
         latest = max((r["updated_at"] for r in runs), default="")
         return page(request, "index.html", nav="runs", runs=runs, ov=ov, spotlight=spotlight,
-                    version=f"{len(runs)}:{latest}")
+                    featured=_featured(runs), version=f"{len(runs)}:{latest}")
+
+    def _featured(runs: list[dict]) -> dict | None:
+        """The newest run where production regressed and Rewind took it back: the homepage's proof."""
+        summary = next((r for r in runs if r["state"] == "rewound"
+                        and (r.get("rewind") or {}).get("mitigated_after_s") is not None), None)
+        run = repo.get(summary["id"]) if summary else None
+        if not run or not run.rewind_id:
+            return None
+        with contextlib.suppress(RewindError):
+            report = engine.get_report(run.rewind_id)
+            return {"run": run, "track": views.run_track(run, report), "rewind": summary["rewind"]}
+        return None
 
     @app.get("/runs/{run_id}", response_class=HTMLResponse)
     def run_page(request: Request, run_id: str):

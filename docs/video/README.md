@@ -1,78 +1,124 @@
 # Making the demo video (under 3 minutes)
 
-Everything on screen is a real run. Waiting time is sped up and labelled as such; results are never faked.
+Everything on screen is a real run. Waiting is sped up and labelled; results are never faked. You need a MacBook,
+about 30 minutes of recording, and an hour of editing.
 
-- [narration.md](narration.md): the script, scene by scene, with what's on screen. [narration.txt](narration.txt) is
-  the same text for a voice generator.
-- [cards/](cards/): title and end cards, and labels to place over the footage (1920×1080, labels are transparent).
-- `scripts/video/presenter.py`: the animated Rewind logo that presents in the corner, driven by your voiceover.
-- `scripts/video/subtitles.py`: subtitles timed to your voiceover.
+**In this folder:** [narration.md](narration.md) (script and what's on screen, scene by scene),
+[narration.txt](narration.txt) (the same text for a voice generator), [cards/](cards/) (title, end card and labels).
+**Tools in the repo:** `make video-presenter` (the animated Rewind presenter) and `make video-subtitles`.
+**Free apps:** QuickTime (built in), [CapCut desktop](https://www.capcut.com) for editing, a text-to-speech voice such
+as [ElevenLabs](https://elevenlabs.io).
 
-## 1. Set up the screen
+## 0. Order of work
 
-- Browser window at 1920×1080, zoom 110%, bookmarks bar hidden, light theme, Do Not Disturb on.
-- Tabs: the GitLab issue list, the Rewind dashboard, the storefront
-  (https://rewind-demo-production-twegh4u3wa-ew.a.run.app), and the GitLab merge requests.
-- Recorder: QuickTime (**File → New Screen Recording**) or OBS; Screen Studio on a Mac adds smooth zooms.
+1. Record the live run (step 2A) and note its "production mitigated" time.
+2. Put that number into `narration.txt` (scene 4: "in 17 seconds") and `cards/label-mitigated.png` (or a text layer).
+3. Record the short clips (step 2B).
+4. Make the voiceover (step 3), then the presenter and subtitles (step 4).
+5. Edit (step 5), export, upload (step 6).
+
+## 1. Set up the Mac
+
+- **Focus:** Control Center → Focus → Do Not Disturb, so no notifications appear.
+- **Browser:** Chrome, light theme. View → uncheck "Always Show Bookmarks Bar". Zoom 110% (Cmd + =).
+- **Full screen:** View → Enter Full Screen (Ctrl + Cmd + F). It hides the menu bar and Dock.
+- **Tabs, in this order** (switch with Cmd + 1…4, no mouse needed):
+  1. GitLab: the issue list
+  2. the Rewind dashboard: https://rewind-twegh4u3wa-ew.a.run.app
+  3. GitLab: the merge requests list
+  4. the storefront: https://rewind-demo-production-twegh4u3wa-ew.a.run.app
+- **Recorder:** press **Cmd + Shift + 5**, choose **Record Entire Screen**, open **Options**: Save to Desktop,
+  Microphone **None**, **Show Mouse Clicks** on. Click **Record**. To stop: the stop button in the menu bar, or
+  Cmd + Ctrl + Esc. The recording appears on the Desktop as a .mov.
 
 ## 2. Record
 
-**A. The live run (scenes 3 and 4).** One continuous recording of about 16 minutes:
+### A. The live run (scenes 3 and 4): one recording, about 20 minutes
 
-1. `python scripts/demo.py rewind --no-label` creates the flash-sale issue. Open it in GitLab.
-2. Start recording. Add the `rewind:auto` label, then switch to the run on the dashboard and let it fill in.
-3. Open the merge request when the review lands: Duo's "requested changes" and Rewind's policy note.
-4. When the run says **Releasing**, switch to the storefront and stay there: the price goes wrong, the Rewind strip
-   says it's undoing the release, then "Prices recovered" and "Restored by Rewind".
-5. Back to the run page: the arc to the checkpoint, "production mitigated", zero drift. Then the closed incident.
+In the terminal (not recorded): `python scripts/demo.py rewind --no-label`. It prints the new issue's link.
 
-Note the run's "production mitigated" time and put it in the narration (scene 4).
+Start recording, then:
 
-**B. Short clips of pages that already exist (scenes 1, 5, 6, 7).** 5–10 seconds each, slow scroll:
+1. **Tab 1**, open the new issue. Add the label `rewind:auto` (Labels → rewind:auto). Hold 3 seconds.
+2. **Tab 2**, open the run (the newest on the overview). Leave it on screen: the track fills in by itself.
+3. When the run says **Merging**, **tab 3**: open the merge request, scroll to Duo's review ("requested changes")
+   and Rewind's note ("Everything this change ships can be undone, so by Rewind's policy…"). Hold 5 seconds.
+4. When the run says **Releasing**, **tab 4**, the storefront, and **don't touch anything**: the strip says
+   "Rewind is watching this release", prices go wrong, it turns to "Rewind is undoing this release", then
+   "Prices recovered" and "Restored by Rewind". This part plays at real speed in the video.
+5. **Tab 2**, the run page: the arc back to the checkpoint, "Production mitigated", "Zero drift". Scroll slowly to the
+   undo steps. Then click "Incident #…" in the header and show that it's closed.
+6. Stop recording.
 
-| Scene | Clip |
+### B. Short clips (scenes 1, 5, 6, 7): 5–10 seconds each, slow scroll
+
+| Scene | Record |
 |---|---|
-| 1 | GitLab merge requests opened by "Duo Developer" |
-| 5 | MR !13: "Deviation from the acceptance criteria… queued to an in-memory outbox" |
-| 5 | The run for #14 that was blocked: the finding on `app/receipts.py:13` and "How to ship it safely" |
-| 6 | A `/rewind` comment and Rewind's reply on an issue; the Policy page's "Who can do what"; the Connect page |
-| 7 | A run's DevSecOps lifecycle at 9 of 9 |
+| 1 | GitLab merge requests list: MRs authored by "Duo Developer" |
+| 5 | MR !13: its description, "Deviation from the acceptance criteria… queued to an in-memory outbox" |
+| 5 | The dashboard run for #14 that was **blocked**: the gate finding on `app/receipts.py:13` and "How to ship it safely" |
+| 6 | An issue with a `/rewind` comment and Rewind's reply; the dashboard's **Policy** page ("Who can do what"); **Connect** |
+| 7 | Any run page scrolled to the DevSecOps lifecycle (9 of 9); the **How it works** diagram |
 
-## 3. The voice
+One recording with pauses between clips is fine: you'll cut them apart in the editor.
 
-Paste [narration.txt](narration.txt) into a text-to-speech service (ElevenLabs sounds most natural: pick a calm voice,
-stability around 50%) and download the audio. A quick draft for timing the edit, with the voice built into macOS:
+## 3. The voiceover
 
-```bash
-say -v Samantha -r 155 -o voiceover-draft.aiff -f docs/video/narration.txt
-```
+1. On elevenlabs.io: Text to Speech → paste [narration.txt](narration.txt) → choose a calm voice →
+   settings: Stability about 50%, Similarity about 75% → Generate → listen → Download (MP3).
+   It should land around 2:30–2:45. If it's longer than 2:50, raise the speed slightly or regenerate.
+2. Free plan: check the plan's terms; credit the voice in the YouTube description if it asks for attribution.
+3. Quick draft to rehearse the edit, with the Mac's own voice:
+   `say -v Samantha -r 155 -o voiceover-draft.aiff -f docs/video/narration.txt`
+
+Save the final file as `voiceover.mp3` in the repo folder.
 
 ## 4. The presenter and subtitles
 
 ```bash
-make video-presenter AUDIO=voiceover.mp3   # docs/video/build/presenter-alpha.mov and presenter-green.mp4
+make video-presenter AUDIO=voiceover.mp3   # docs/video/build/presenter-green.mp4 and presenter-alpha.mov
 make video-subtitles AUDIO=voiceover.mp3   # docs/video/build/subtitles.srt
 ```
 
-Put the presenter in the bottom-right corner at about 14% of the frame width. Use `presenter-alpha.mov` in DaVinci
-Resolve, Final Cut or Premiere (it's transparent); in CapCut use `presenter-green.mp4` with **Chroma key** on the green.
-Labels go bottom-left, so they don't collide.
+## 5. Edit in CapCut (desktop)
 
-## 5. Edit
+1. **New project.** Canvas: **16:9**, 1920×1080 (click "Ratio" above the preview).
+2. **Import** (drag into the media panel): `voiceover.mp3`, your recordings from the Desktop,
+   `docs/video/cards/*.png`, `docs/video/build/presenter-green.mp4`.
+3. **Voice first:** drag `voiceover.mp3` to the timeline. It sets every time below.
+4. **Footage, scene by scene,** on the main video track, following [narration.md](narration.md):
+   - Scene 1 (0:00–0:14): the merge requests clip.
+   - Scene 2 (0:14–0:24): `cards/title.png`, stretched to 10 seconds.
+   - Scene 3 (0:24–1:04): recording A from the label to the merge request. Select the waiting parts → **Speed** →
+     about ×20. Split with **Cmd + B** to keep the key moments (label added, merge request opened, review, policy
+     note) at normal speed.
+   - Scene 4 (1:04–1:44): recording A from "Releasing": storefront at **real speed**, then the run page and incident.
+   - Scenes 5–6: the clips from B, trimmed to the voice.
+   - Scene 7 (2:36–2:50): the lifecycle clip, then `cards/end.png` for the last 6 seconds.
+   - If a clip doesn't fill the 16:9 frame (MacBook screens are taller), select it → Basic → **Scale** up slightly so
+     it fills, and reposition.
+5. **Labels:** drag `cards/label-real-sped-up.png` onto a track above the sped-up parts, `label-real-time.png` over the
+   storefront part, `label-mitigated.png` right after the rewind, `label-policy-ships.png` over the policy note,
+   `label-agent-outbox.png` and `label-gate-blocked.png` in scene 5. They're full-frame and transparent: no
+   positioning needed.
+6. **Presenter:** drag `presenter-green.mp4` onto a track above everything, starting at 0:00. Basic → Scale about
+   18%, position bottom-right (keep 40 px from the edges). **Cutout → Chroma key** → pick the green → Intensity
+   about 30. Mute its audio (the voice track already plays). Hide it during the title and end cards if you prefer.
+7. **Subtitles:** Text → **Local captions** → import `docs/video/build/subtitles.srt` (or **Auto captions** from the
+   voice). Style: white, semi-bold, size about 6, a dark background box, bottom centre.
+8. **No music** (or only music you have rights to). No third-party logos.
+9. **Check:** watch it once start to finish with sound. Total under **3:00**.
+10. **Export:** 1080p, 30 fps, H.264, MP4.
 
-DaVinci Resolve or CapCut, 1920×1080 at 30 fps.
-
-1. Lay the voiceover down first; it sets the timing.
-2. Cut the footage to it scene by scene (see the table in [narration.md](narration.md)).
-3. Speed up the waits in recording A (×20 is about right) and put `label-real-sped-up.png` over them. Keep the break
-   and the rewind at real speed with `label-real-time.png`, then `label-mitigated.png` (update its number if your run
-   differs: edit the text in the card and re-export, or add a text layer).
-4. Title card at the start of scene 2, end card for scene 7. Presenter and subtitles on top.
-5. No music, or only music you have the rights to. No third-party logos.
-6. Check the length: under 3 minutes.
+*Using DaVinci Resolve instead:* import `presenter-alpha.mov` (already transparent, no chroma key) and the .srt
+(File → Import → Subtitle).
 
 ## 6. Publish
 
-Upload to YouTube as **public** or **unlisted**. Title: *Rewind: Ctrl+Z for autonomous software delivery on GitLab*.
-Put the dashboard and repository links in the description. Then add the link to the README (replace the `DEMO-VIDEO`
-comment at the top), `make ship`, and `make release`.
+1. YouTube Studio → Create → Upload video.
+   - Title: *Rewind: Ctrl+Z for autonomous software delivery on GitLab*.
+   - Description: one line on what Rewind does, the dashboard link, the repository link.
+   - Audience: not made for kids. Visibility: **Public** or **Unlisted**.
+2. Copy the link. In `README.md`, replace the `DEMO-VIDEO` comment line at the top with
+   `· <a href="https://youtu.be/...">Demo video</a>`.
+3. `make ship`, then `make release`, then submit on Devpost with `docs/brand/rewind-thumbnail.png` as the thumbnail.

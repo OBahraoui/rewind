@@ -316,3 +316,10 @@ def test_how_it_works_and_connect_pages(world):
             assert text in r.text, (path, text)
     nav = world.get("/").text
     assert 'href="/how"' in nav and 'href="/connect"' in nav
+
+
+def test_homepage_leads_with_a_real_rewind(world):
+    html = world.get("/").text
+    assert 'class="hero hero-center"' in html and "See a real rewind" in html and 'href="/how"' in html
+    assert 'class="card card-pad featured"' in html and "production back" in html
+    assert html.index('class="hero hero-center"') < html.index("featured") < html.index('aria-label="Key numbers"')
