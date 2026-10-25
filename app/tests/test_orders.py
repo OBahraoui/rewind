@@ -21,6 +21,21 @@ def test_new_pricing_path_runs_only_behind_flag(client):
     assert r.json()["pricing"] == "new"
 
 
+def test_flash_sale_typical_order(client):
+    flags.override("new_pricing", True)
+    r = client.post("/orders/quote", json={"items": [{"sku": "mug", "quantity": 1}, {"sku": "beans", "quantity": 1}]})
+    assert r.json()["subtotal_cents"] == 3000
+    assert r.json()["total_cents"] == 1500
+    assert r.json()["pricing"] == "new"
+
+
+def test_flash_sale_small_order_floors_at_zero(client):
+    flags.override("new_pricing", True)
+    r = client.post("/orders/quote", json={"items": [{"sku": "tea", "quantity": 1}]})
+    assert r.json()["subtotal_cents"] == 400
+    assert r.json()["total_cents"] == 0
+
+
 def test_create_and_get_order(client):
     r = client.post("/orders", json={"customer_id": "c1", "items": [{"sku": "beans", "quantity": 1}]})
     assert r.status_code == 201
