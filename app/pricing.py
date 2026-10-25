@@ -21,12 +21,8 @@ def legacy_total(lines: list[Line]) -> int:
     return subtotal(lines)
 
 
-FLASH_SALE_DISCOUNT_CENTS = 1500  # weekend flash sale: $15 off every order
-
-
 def new_pricing_total(lines: list[Line]) -> int:
-    # No minimum spend and no cap on the discount (approved by Finance); never below $0.
-    return max(0, subtotal(lines) - FLASH_SALE_DISCOUNT_CENTS)
+    return subtotal(lines)
 
 
 def total(lines: list[Line], customer_id: str = "") -> tuple[int, str]:
