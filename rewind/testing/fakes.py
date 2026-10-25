@@ -390,7 +390,16 @@ class FakeGitLab:
 
     @locked
     def bypass_requested_changes(self, iid: int) -> None:
-        """A person who can merge selects Bypass next to the change request (GitLab UI only)."""
+        """A person who can merge selects Bypass next to the change request in GitLab."""
+        self.mrs[iid]["review_status"] = None
+
+    refuse_override = False  # set True to act like a token that can't merge
+
+    @locked
+    def override_requested_changes(self, iid: int) -> None:
+        self._record("override_requested_changes", iid)
+        if self.refuse_override:
+            raise RuntimeError("override refused: you don't have permission to merge this merge request")
         self.mrs[iid]["review_status"] = None
 
     @locked

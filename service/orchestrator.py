@@ -204,7 +204,7 @@ class Orchestrator:
         handler = getattr(self, f"_on_{run.state.value}")
         timeout = TIMEOUTS.get(run.state)
         if run.state == RunState.MERGING and run.extra.get("bypass_asked") == run.gated_sha:
-            timeout = BYPASS_WAIT  # a person was asked to act in GitLab
+            timeout = BYPASS_WAIT  # GitLab refused the override, so a person was asked to Bypass
         if timeout and utcnow() - run.state_since > timeout:
             self._on_timeout(run)
             return
@@ -513,8 +513,8 @@ class Orchestrator:
         if step == "reviewfix":
             mr = self.gitlab.get_merge_request(run.mr_iid)
             if mr and mr["sha"] == run.gated_sha:  # reviewing the same commit again would only cost credits
-                self._review_needs_human(run, f"Duo code review requests changes on MR !{run.mr_iid} that the "
-                                              f"agent couldn't address (it pushed no change)")
+                self._unresolved_review(run, f"Duo code review requests changes on MR !{run.mr_iid} that the "
+                                             f"agent couldn't address (it pushed no change)")
                 return
         run.move(RunState.GATING, "fix pushed; any new commit is gated again")
 
@@ -540,7 +540,7 @@ class Orchestrator:
         if merge_status == "requested_changes":
             accepted = self._review_accepted(run, mr["sha"])
             if accepted:
-                self._await_bypass(run, mr, accepted)
+                self._override_review(run, mr, accepted)
             else:
                 self._address_review(run, mr)
             return
@@ -568,7 +568,7 @@ class Orchestrator:
 
     def _address_review(self, run: Run, mr: dict) -> None:
         """The code review requested changes. The developer agent addresses them, then the new commit is gated,
-        tested and reviewed again. Rewind never dismisses a review: if the changes stay requested, a human decides."""
+        tested and reviewed again. What stays unresolved goes to the review policy."""
         comments = self._review_comments(run)
         run.add_evidence("verify", f"Duo code review requested changes on MR !{run.mr_iid}", "changes requested",
                          run.mr_url)
@@ -582,13 +582,38 @@ class Orchestrator:
                 run.move(RunState.FIXING, f"code review requested changes; review-fix flow #{flow.workflow_id} "
                                           f"started")
             return
-        self._review_needs_human(run, f"Duo code review still requests changes on MR !{run.mr_iid} after "
-                                      f"{attempts} agent fix attempt(s)", comments)
+        self._unresolved_review(run, f"Duo code review still requests changes on MR !{run.mr_iid} after "
+                                     f"{attempts} agent fix attempt(s)", comments)
 
-    def _review_needs_human(self, run: Run, why: str, comments: list[str] | None = None) -> None:
-        """Stop for a human, in the reviewer's words. Only an authenticated approval can accept its concerns."""
+    def _may_ship_over_review(self, run: Run) -> bool:
+        """Policy `ship`: only when the gate allowed everything this change ships, with nothing accepted by hand."""
+        return (self.policy.review.unresolved_when_reversible == "ship" and bool(run.gated_sha)
+                and run.gate is not None and run.gate.verdict == "allow" and not run.security_findings)
+
+    def _unresolved_review(self, run: Run, why: str, comments: list[str] | None = None) -> None:
+        """Concerns the agent couldn't address. A change Rewind can fully undo ships over them by policy, recorded
+        with the reviewer's words; anything else stops for a named human (`rewind approve`)."""
         comments = self._review_comments(run) if comments is None else comments
         said = _gist(comments)
+        if self._may_ship_over_review(run):
+            sha = run.gated_sha
+            run.approvals.append(Approval(by="Rewind policy", sha=sha, covers=[f"review|{sha}"],
+                                          reason="everything this change ships can be undone, so it ships and "
+                                                 "production is watched (review.unresolved_when_reversible: ship)"))
+            run.add_evidence("govern", f"Code review concerns accepted by policy for {sha[:8]}: every change in it "
+                                       f"is undoable", "accepted by policy", run.mr_url)
+            self.gitlab.create_mr_note(run.mr_iid, f"⏪ {why}" + (f": {said}" if said else ".") + "\n\nEverything "
+                                       f"this change ships can be undone, so by Rewind's policy "
+                                       f"(`review.unresolved_when_reversible: ship`) it ships behind its flag and "
+                                       f"production is watched. If production regresses, Rewind undoes the whole "
+                                       f"change set. Rewind overrides the requested changes for commit `{sha[:8]}` "
+                                       f"only; the review's comments stay here.")
+            msg = f"{why}; every change in it can be undone, so by policy it ships and production is watched"
+            if run.state == RunState.MERGING:
+                run.note(msg)
+            else:
+                run.move(RunState.MERGING, msg)
+            return
         run.extra["blocked_by"] = "review"
         self._label(run, add=["rewind:needs-human"])
         self._block(run, why + (f": {said}" if said else "") + " A human can accept its concerns for this commit "
@@ -597,16 +622,29 @@ class Orchestrator:
     def _review_accepted(self, run: Run, sha: str) -> Approval | None:
         return run.approval_for(sha, {f"review|{sha}"}) if sha else None
 
-    def _await_bypass(self, run: Run, mr: dict, approval: Approval) -> None:
-        """A named human accepted the review's concerns for this commit. GitLab lifts requested changes only when
-        the reviewer re-reviews or a person who can merge selects Bypass on the merge request, and Rewind doesn't
-        override a review itself: it asks once, then merges as soon as the block is gone."""
-        if run.extra.get("bypass_asked") == mr["sha"]:
+    def _override_review(self, run: Run, mr: dict, approval: Approval) -> None:
+        """The review's concerns were accepted for this commit (by policy or by a named human): override the
+        requested changes the way GitLab's Bypass button does, recorded on the merge request. If GitLab refuses
+        (the token can't merge), ask a person to select Bypass, once, and wait."""
+        if run.extra.get("override_tried") == mr["sha"]:
             return
-        run.extra["bypass_asked"] = mr["sha"]
-        run.extra["merge_waiting"] = "requested_changes"
-        run.note(f"{approval.by} accepted the code review's concerns for {mr['sha'][:8]}; waiting for someone who "
-                 f"can merge to select Bypass next to the change request on MR !{run.mr_iid}")
+        run.extra["override_tried"] = mr["sha"]
+        try:
+            self.gitlab.override_requested_changes(run.mr_iid)
+        except Exception as exc:
+            log.warning("override refused", extra={"run": run.id, "error": str(exc)})
+            run.extra["bypass_asked"] = mr["sha"]
+            run.extra["merge_waiting"] = "requested_changes"
+            run.note(f"GitLab refused to override the requested changes ({exc}); waiting for someone who can merge "
+                     f"to select Bypass next to the change request on MR !{run.mr_iid}")
+            self.gitlab.create_mr_note(run.mr_iid, f"⏪ Rewind couldn't override the requested changes here: {exc}. "
+                                                   f"Someone who can merge can select **Bypass** next to the change "
+                                                   f"request; Rewind then merges the gated commit `{mr['sha'][:8]}`.")
+            return
+        run.add_evidence("govern", f"Requested changes overridden for {mr['sha'][:8]} ({approval.by})", "overridden",
+                         run.mr_url)
+        run.note(f"overrode the code review's requested changes for {mr['sha'][:8]}; {approval.by} accepted its "
+                 f"concerns")
 
     def _review_comments(self, run: Run) -> list[str]:
         """What the reviewer wrote during the latest review, oldest first (Rewind's own notes left out)."""
@@ -958,14 +996,14 @@ class Orchestrator:
                 covers.add(f"review|{mr['sha']}")
             run.approvals.append(Approval(by=by, reason=reason.strip(), sha=mr["sha"], covers=sorted(covers)))
             run.error = None
-            run.extra.pop("bypass_asked", None)  # ask again for this approval
+            run.extra.pop("bypass_asked", None)  # try again for this approval
+            run.extra.pop("override_tried", None)
             self._label(run, add=[LABELS["running"]], remove=[LABELS["blocked"], LABELS["failed"]])
             accepted = "the code review's concerns" if review else "the risk"
             run.move(RunState.GATING, f"{by} accepted {accepted} for {mr['sha'][:8]}: {reason.strip()}")
             what = "the code review's open concerns" if review else "what Rewind can't undo in this change"
-            then = ("\n\nGitLab keeps the merge blocked until someone who can merge selects **Bypass** next to the "
-                    "change request in this merge request's Overview. Rewind merges the gated commit as soon as "
-                    "it's clear. The review's comments stay here." if review else "")
+            then = ("\n\nRewind overrides the requested changes for this commit (what GitLab's Bypass does) and "
+                    "merges it. The review's comments stay here." if review else "")
             self.gitlab.create_mr_note(run.mr_iid, f"⏪ **{by}** accepted {what}, for commit `{mr['sha'][:8]}` only: "
                                                    f"{reason.strip()}{then}")
             self.repo.save(run)

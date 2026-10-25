@@ -251,7 +251,7 @@ def create_app(settings: Settings | None = None, *, gitlab: Any = None, cloudrun
         for rule in policy.classify:
             classify[rule.cls].append(rule)
         return page(request, "policy.html", nav="policy", classify=classify, gate=policy.gate,
-                    privileges=policy.agent_privileges)
+                    privileges=policy.agent_privileges, review=policy.review)
 
     @app.exception_handler(404)
     def _not_found(request: Request, exc: HTTPException):

@@ -93,6 +93,17 @@ class SecurityPolicy(BaseModel):
     max_fix_attempts: int = 1
 
 
+class ReviewPolicy(BaseModel):
+    """When the code review requests changes the agent can't address.
+
+    ship: if the gate found everything this change ships undoable, Rewind overrides the requested changes (recorded on
+          the merge request, with the reviewer's words) and ships; production monitoring and Rewind are the safety net.
+    human: stop for a named person (`rewind approve`).
+    Never applies to a change with anything irreversible in it."""
+
+    unresolved_when_reversible: Literal["ship", "human"] = "ship"
+
+
 class Policy(BaseModel):
     version: int = 1
     ignore: IgnorePolicy = Field(default_factory=IgnorePolicy)
@@ -102,6 +113,7 @@ class Policy(BaseModel):
     gate: GatePolicy = Field(default_factory=GatePolicy)
     agents: AgentIdentity = Field(default_factory=AgentIdentity)
     security: SecurityPolicy = Field(default_factory=SecurityPolicy)
+    review: ReviewPolicy = Field(default_factory=ReviewPolicy)
 
     @field_validator("classify")
     @classmethod

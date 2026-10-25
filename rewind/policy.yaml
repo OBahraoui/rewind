@@ -27,6 +27,13 @@ security:
   fix_severities: [Critical, High]
   max_fix_attempts: 1
 
+# Duo code review requests changes the agent couldn't address. If the gate found everything this change ships
+# undoable, "ship" overrides the requested changes (recorded on the merge request with the reviewer's words) and
+# ships behind the flag: production monitoring and Rewind are the safety net. "human" stops for `rewind approve`.
+# Never applies to a change with anything irreversible in it.
+review:
+  unresolved_when_reversible: ship
+
 snapshot:
   # Issues and MRs: every open one, plus closed ones updated in this window.
   lookback_days: 30

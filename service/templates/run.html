@@ -200,7 +200,7 @@
 
       {% if run.approvals %}
       <section class="card card-pad" aria-labelledby="ap-h">
-        <header><h3 id="ap-h">Human approvals</h3></header>
+        <header><h3 id="ap-h">Accepted</h3><span class="muted small">by a person or by policy</span></header>
         <ul class="list">{% for a in run.approvals %}
           <li><div class="grow"><b>{{ a.by }}</b> accepted {% if a.of_review %}the code review's concerns{% else %}the risk{% endif %} for <code>{{ a.sha[:8] }}</code><span class="by">{{ a.reason }} · {{ a.at.strftime('%d %b %H:%M') }} UTC</span></div></li>
         {% endfor %}</ul>

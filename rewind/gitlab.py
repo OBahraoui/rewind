@@ -73,6 +73,16 @@ class GitLabClient:
             raise RuntimeError(f"GraphQL errors: {body['errors']}")
         return body["data"]
 
+    def override_requested_changes(self, iid: int) -> None:
+        """What GitLab's Bypass button does: override every requested change on the merge request. Only users who
+        can merge it may; GitLab records it on the merge request ("Override added")."""
+        path = self.project()["path_with_namespace"]
+        q = """mutation($p: ID!, $i: String!) {
+          mergeRequestUpdate(input: {projectPath: $p, iid: $i, overrideRequestedChanges: true}) { errors } }"""
+        errors = self.graphql(q, {"p": path, "i": str(iid)})["mergeRequestUpdate"]["errors"]
+        if errors:
+            raise RuntimeError(f"override refused: {'; '.join(errors)}")
+
     # -- project -------------------------------------------------------------
     def project(self) -> dict:
         return self._get(self._p)

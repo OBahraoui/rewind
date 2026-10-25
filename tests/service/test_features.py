@@ -508,7 +508,13 @@ def test_requested_changes_go_back_to_the_agent_then_merge(orch, gl):
     assert run.state is RunState.RELEASING, run.timeline[-1]
 
 
-def test_changes_still_requested_after_the_fix_block_with_the_reviewers_words(orch, gl):
+def stop_for_a_human(orch, monkeypatch):
+    """The stricter review policy: unresolved concerns wait for `rewind approve`."""
+    monkeypatch.setattr(orch.policy.review, "unresolved_when_reversible", "human")
+
+
+def test_changes_still_requested_after_the_fix_block_with_the_reviewers_words(orch, gl, monkeypatch):
+    stop_for_a_human(orch, monkeypatch)
     _, mr, run = to_review(orch, gl)
     gl.review(mr, REVIEW, request_changes=True)
     finish_flow(gl, run, "review")
@@ -567,7 +573,33 @@ def blocked_by_review_without_a_change(orch, gl):
     return mr, orch.advance(run.id)
 
 
-def test_a_review_fix_that_changes_nothing_stops_for_a_human_without_reviewing_again(orch, gl):
+def test_unresolved_review_on_an_undoable_change_ships_by_policy_with_no_one_in_the_loop(orch, gl):
+    mr, run = blocked_by_review_without_a_change(orch, gl)  # the default policy: ship
+    assert any("by policy it ships" in e.message for e in run.timeline)
+    for _ in range(3):
+        if run.state is RunState.RELEASING:
+            break
+        run = orch.advance(run.id)
+    assert run.state is RunState.RELEASING, run.timeline[-1]
+    assert ("override_requested_changes", (mr,)) in [c[:2] for c in gl.calls]  # what GitLab's Bypass does, via API
+    assert run.approvals[-1].by == "Rewind policy" and run.approvals[-1].covers == [f"review|{run.gated_sha}"]
+    note = next(n["body"] for n in gl.mr_notes[mr] if "by Rewind's policy" in n["body"])
+    assert "Please confirm that the sign-off covers" in note and "@" not in note
+    assert any(e.status == "accepted by policy" for e in run.evidence)
+    assert any(e.status == "overridden" for e in run.evidence)
+    reviews = [c for c in gl.calls if c[0] == "start_workflow" and c[2].get("workflow_definition") == "code_review/v1"]
+    assert len(reviews) == 1  # the same commit isn't reviewed twice
+
+
+def test_the_policy_never_ships_over_a_review_when_anything_needed_a_human(orch, gl):
+    _, _, run = to_review(orch, gl)
+    assert orch._may_ship_over_review(run)
+    run.gate.verdict = "block"  # the gate blocked, and a person accepted the irreversible part
+    assert not orch._may_ship_over_review(run)
+
+
+def test_a_review_fix_that_changes_nothing_stops_for_a_human_without_reviewing_again(orch, gl, monkeypatch):
+    stop_for_a_human(orch, monkeypatch)
     _, run = blocked_by_review_without_a_change(orch, gl)
     assert run.state is RunState.BLOCKED
     assert "pushed no change" in run.error and "Please confirm that the sign-off covers" in run.error
@@ -576,64 +608,67 @@ def test_a_review_fix_that_changes_nothing_stops_for_a_human_without_reviewing_a
     assert len(reviews) == 1  # the same commit isn't reviewed twice
 
 
-def test_a_human_can_accept_the_reviews_concerns_for_one_commit(orch, gl):
+def test_a_human_can_accept_the_reviews_concerns_for_one_commit(orch, gl, monkeypatch):
+    stop_for_a_human(orch, monkeypatch)
     mr, run = blocked_by_review_without_a_change(orch, gl)
     flows_before = sum(1 for c in gl.calls if c[0] == "start_workflow")
     run = orch.approve(run.id, by="Othmane", reason="Finance confirmed unlimited free orders for the sale")
     assert any("Othmane accepted the code review's concerns for" in e.message for e in run.timeline)
     for _ in range(3):
+        if run.state is RunState.RELEASING:
+            break
         run = orch.advance(run.id)
-    # Not reviewed again; GitLab still blocks, so Rewind asks a person to Bypass, once, and waits.
-    assert run.state is RunState.MERGING and "select Bypass" in run.timeline[-1].message
+    # Not reviewed again; Rewind overrides the requested changes itself and merges. No click needed.
+    assert run.state is RunState.RELEASING, run.timeline[-1]
     assert sum(1 for c in gl.calls if c[0] == "start_workflow") == flows_before
+    assert ("override_requested_changes", (mr,)) in [c[:2] for c in gl.calls]
     notes = [n["body"] for n in gl.mr_notes[mr]]
-    asks = [b for b in notes if "accepted the code review's open concerns" in b]
-    assert len(asks) == 1 and "**Bypass**" in asks[0] and "@" not in asks[0]  # a mention would summon the bot
+    accepted = [b for b in notes if "accepted the code review's open concerns" in b]
+    assert len(accepted) == 1 and "Rewind overrides the requested changes" in accepted[0] and "@" not in accepted[0]
     assert any("Please confirm" in b for b in notes)  # the review's comments stay
     assert run.approvals[-1].covers == [f"review|{run.gated_sha}"]
-    gl.bypass_requested_changes(mr)  # a person who can merge clicks Bypass in GitLab
-    run = orch.advance(run.id)
-    assert run.state is RunState.RELEASING, run.timeline[-1]
 
 
-def test_waiting_for_a_bypass_allows_an_hour_and_says_why_when_it_runs_out(orch, gl):
+def test_if_gitlab_refuses_the_override_a_person_is_asked_to_bypass_for_up_to_an_hour(orch, gl):
     from datetime import timedelta
 
-    _, run = blocked_by_review_without_a_change(orch, gl)
-    run = orch.approve(run.id, by="Othmane", reason="accepted")
+    gl.refuse_override = True  # e.g. a token that can't merge
+    mr, run = blocked_by_review_without_a_change(orch, gl)
     for _ in range(3):
         run = orch.advance(run.id)
+    assert run.state is RunState.MERGING and "select Bypass" in run.timeline[-1].message
+    assert any("**Bypass**" in n["body"] for n in gl.mr_notes[mr])
     run.state_since -= timedelta(minutes=30)  # past the usual 10 minutes for merging
     orch.repo.save(run)
-    run = orch.advance(run.id)
-    assert run.state is RunState.MERGING
-    run.state_since -= timedelta(minutes=31)
-    orch.repo.save(run)
-    run = orch.advance(run.id)
-    assert run.state is RunState.FAILED and "select Bypass" in run.error
+    assert orch.advance(run.id).state is RunState.MERGING
+    gl.bypass_requested_changes(mr)  # a person who can merge clicks Bypass
+    assert orch.advance(run.id).state is RunState.RELEASING
 
 
-def test_a_run_that_timed_out_waiting_for_a_bypass_can_be_approved_again(orch, gl):
+def test_a_run_that_timed_out_waiting_for_a_bypass_can_be_approved_again(orch, gl, monkeypatch):
     from datetime import timedelta
 
-    mr, run = blocked_by_review_without_a_change(orch, gl)
+    stop_for_a_human(orch, monkeypatch)
+    gl.refuse_override = True
+    _, run = blocked_by_review_without_a_change(orch, gl)
     run = orch.approve(run.id, by="Othmane", reason="accepted")
     for _ in range(3):
         run = orch.advance(run.id)
     run.state_since -= timedelta(minutes=61)
     orch.repo.save(run)
     run = orch.advance(run.id)
-    assert run.state is RunState.FAILED
+    assert run.state is RunState.FAILED and "select Bypass" in run.error
+    gl.refuse_override = False  # e.g. now run with a token that can merge
     run = orch.approve(run.id, by="Othmane", reason="accepted again")
     for _ in range(3):
+        if run.state is RunState.RELEASING:
+            break
         run = orch.advance(run.id)
-    assert run.state is RunState.MERGING
-    assert sum("accepted the code review's open concerns" in n["body"] for n in gl.mr_notes[mr]) == 2
-    gl.bypass_requested_changes(mr)
-    assert orch.advance(run.id).state is RunState.RELEASING
+    assert run.state is RunState.RELEASING
 
 
-def test_accepting_a_review_is_bound_to_its_commit(orch, gl):
+def test_accepting_a_review_is_bound_to_its_commit(orch, gl, monkeypatch):
+    stop_for_a_human(orch, monkeypatch)
     mr, run = blocked_by_review_without_a_change(orch, gl)
     run = orch.approve(run.id, by="Othmane", reason="accepted")
     gl.commit_files("agent/feature", {"app/pricing.py": gl.tree("agent/feature")["app/pricing.py"] + "#\n"})
@@ -642,7 +677,8 @@ def test_accepting_a_review_is_bound_to_its_commit(orch, gl):
     assert not orch._review_accepted(run, gl.get_merge_request(mr)["sha"])
 
 
-def test_a_run_blocked_by_review_before_the_upgrade_can_still_be_accepted(orch, gl):
+def test_a_run_blocked_by_review_before_the_upgrade_can_still_be_accepted(orch, gl, monkeypatch):
+    stop_for_a_human(orch, monkeypatch)
     _, run = blocked_by_review_without_a_change(orch, gl)
     run.extra.pop("blocked_by")  # what a run blocked by the previous version looks like
     run.error = "Duo code review still requests changes on MR !1 after 1 agent fix attempt(s)"

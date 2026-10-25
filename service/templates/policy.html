@@ -59,6 +59,7 @@
     <dl class="kv">
       <dt>Undo a run</dt><dd>Any project member with Developer or higher: comment <code>/rewind</code>. Undo is safe and can itself be undone.</dd>
       <dt>Stop a run</dt><dd>Same: comment <code>/rewind stop</code>. Stopping only removes autonomy.</dd>
+      <dt>Code review concerns</dt><dd>{% if review.unresolved_when_reversible == "ship" %}When the agent can't resolve what Duo code review asks for and everything the change ships can be undone, Rewind ships it: it overrides the requested changes for that commit, says why on the merge request, and watches production.{% else %}When the agent can't resolve what Duo code review asks for, the run waits for a named person to accept with <code>rewind approve</code>.{% endif %} Never for anything irreversible. Set by <code>review.unresolved_when_reversible</code>.</dd>
       <dt>Accept the irreversible</dt><dd>Only through Rewind's authenticated API (<code>rewind approve</code>), never a comment: agents comment with your identity. Bound to one commit and to the findings shown.</dd>
     </dl>
   </section>
