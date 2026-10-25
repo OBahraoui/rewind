@@ -12,6 +12,9 @@ from app.flags import flags
 
 Line = tuple[int, int]  # (unit price in cents, quantity)
 
+# Weekend flash sale: flat discount on every order, no minimum spend, no cap.
+FLASH_SALE_DISCOUNT_CENTS = 1500
+
 
 def subtotal(lines: list[Line]) -> int:
     return sum(price * qty for price, qty in lines)
@@ -22,7 +25,7 @@ def legacy_total(lines: list[Line]) -> int:
 
 
 def new_pricing_total(lines: list[Line]) -> int:
-    return subtotal(lines)
+    return max(0, subtotal(lines) - FLASH_SALE_DISCOUNT_CENTS)
 
 
 def total(lines: list[Line], customer_id: str = "") -> tuple[int, str]:
