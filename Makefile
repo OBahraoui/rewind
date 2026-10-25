@@ -42,7 +42,7 @@ demo-review: ## Open the launch-promo issue and follow the run (Duo review reque
 demo-ship: ## Open the bulk-discount issue and follow the run (ships to production)
 	$(PY) scripts/demo.py ship --watch
 
-demo-block: ## Open the send-a-receipt-now issue and follow the run (the gate blocks the external call)
+demo-block: ## Open the send-a-receipt-now issue and follow the run (the agent stops and asks, or the gate blocks)
 	$(PY) scripts/demo.py block --watch
 
 rerun: ## Start a fresh run for an issue and follow it: make rerun ISSUE=5

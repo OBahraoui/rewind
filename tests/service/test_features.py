@@ -714,3 +714,31 @@ def test_the_block_message_quotes_the_reviewers_point_not_its_preamble():
     assert _gist([summary]) == "The first is a recommendation to check the 50% guardrail."
     assert _gist(["I left one comment.", "This flat discount lets the total fall below the guardrail."]) == \
         "This flat discount lets the total fall below the guardrail."
+
+
+def test_an_agent_that_stops_to_ask_is_heard_on_the_issue(orch, gl):
+    issue = gl.add_issue("Send the receipt now", labels=["rewind:auto"])
+    run = orch.start_run(issue)
+    finish_flow(gl, run, "plan")
+    run = orch.advance(run.id)
+    gl.workflows[run.current_flow("develop").workflow_id]["final"] = (
+        "I haven't written any code yet. Issue #1 as written conflicts with this repo's guardrails, and I need you "
+        "to choose how to proceed.\nA sent receipt can't be recalled.")
+    finish_flow(gl, run, "develop")  # finished, no merge request
+    run = orch.advance(run.id)
+    assert run.state is RunState.BLOCKED
+    assert run.error.endswith("conflicts with this repo's guardrails, and I need you to choose how to proceed.")
+    notes = [n["body"] for n in gl.list_issue_notes(issue)]
+    assert any("The developer agent stopped before opening a merge request" in b and "> A sent receipt" in b
+               for b in notes), notes
+    assert "rewind:needs-human" in gl.issues[issue]["labels"]
+
+
+def test_an_agent_that_stops_silently_still_fails_plainly(orch, gl):
+    issue = gl.add_issue("Something", labels=["rewind:auto"])
+    run = orch.start_run(issue)
+    finish_flow(gl, run, "plan")
+    run = orch.advance(run.id)
+    finish_flow(gl, run, "develop")
+    run = orch.advance(run.id)
+    assert run.state is RunState.FAILED and "without opening a merge request" in run.error

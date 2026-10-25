@@ -71,7 +71,8 @@ def _gist(comments: list[str]) -> str:
     """The reviewer's first real point: skips preambles like "I left two comments." and effort estimates."""
     for body in comments:
         for sentence in re.split(r"(?<=[.!?])\s+", " ".join(body.split())):
-            if sentence and not re.match(r"(?i)^(I (have )?left|I estimate|Overall|Thanks)\b", sentence):
+            if sentence and not re.match(r"(?i)^(I (have )?left|I estimate|Overall|Thanks|I haven't|I have not)\b",
+                                         sentence):
                 return sentence
     return ""
 
@@ -343,7 +344,20 @@ class Orchestrator:
             return
         mr = self._find_mr(run)
         if not mr:
-            self._fail(run, "developer flow finished without opening a merge request")
+            flow = run.current_flow("develop")
+            said = self.gitlab.workflow_final_message(flow.workflow_id) if flow and flow.workflow_id else ""
+            if not said:
+                self._fail(run, "developer flow finished without opening a merge request")
+                return
+            # The agent stopped and said why, usually a question only a person can answer: put it where people look.
+            quoted = "\n".join(f"> {line}" for line in said[:3000].splitlines())
+            self.gitlab.create_issue_note(run.issue_iid, f"⏪ The developer agent stopped before opening a merge "
+                                                         f"request, and said:\n\n{quoted}\n\nAnswer here, then "
+                                                         f"start a new run with `rewind rerun {run.issue_iid}`: the "
+                                                         f"agent reads this issue's comments.")
+            self._label(run, add=["rewind:needs-human"])
+            self._block(run, f"The developer agent stopped before writing code and asked for a decision: "
+                             f"{_gist([said]) or said[:200]}")
             return
         self._plan_evidence(run)
         run.mr_iid, run.mr_url = mr["iid"], mr.get("web_url", "")

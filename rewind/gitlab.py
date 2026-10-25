@@ -6,6 +6,7 @@ Only the endpoints Rewind needs. Every method returns parsed JSON. Tests use
 
 from __future__ import annotations
 
+import json
 from typing import Any
 from urllib.parse import quote
 
@@ -335,6 +336,21 @@ class GitLabClient:
         if not nodes:
             raise NotFound("GRAPHQL", gid, 404, "workflow not found")
         return {"id": workflow_id, "status": str(nodes[0]["status"]).lower()}
+
+    def workflow_final_message(self, workflow_id: int | str) -> str:
+        """The agent's last message in a session (what it told the person who started it), or ""."""
+        query = """
+        query($id: AiDuoWorkflowsWorkflowID!) { duoWorkflowEvents(workflowId: $id) { nodes { checkpoint } } }"""
+        gid = f"gid://gitlab/Ai::DuoWorkflows::Workflow/{workflow_id}"
+        try:
+            nodes = self.graphql(query, {"id": gid})["duoWorkflowEvents"]["nodes"]
+            checkpoint = nodes[0]["checkpoint"] if nodes else {}
+            checkpoint = json.loads(checkpoint) if isinstance(checkpoint, str) else checkpoint
+            log = (checkpoint.get("channel_values") or {}).get("ui_chat_log") or []
+        except Exception:  # best effort: a missing message never fails a run
+            return ""
+        said = [m.get("content") or "" for m in log if m.get("message_type") == "agent"]
+        return said[-1].strip() if said else ""
 
     def workflow_trace(self, workflow_id: int | str) -> str:
         return self._api.request("GET", f"/ai/duo_workflows/workflows/{workflow_id}/trace.jsonl").text

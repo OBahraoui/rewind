@@ -721,6 +721,10 @@ class FakeGitLab:
         return {"id": w["id"], "status": w["status"]}
 
     @locked
+    def workflow_final_message(self, workflow_id: int | str) -> str:
+        return (self.workflows.get(int(workflow_id)) or {}).get("final", "")
+
+    @locked
     def workflow_trace(self, workflow_id: int | str) -> str:
         return ""
 

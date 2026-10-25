@@ -137,7 +137,7 @@ Approvals are never taken from comments: Duo flows act with your identity, so a 
 
 ### What agents are told, and what they aren't
 
-Agents get the general way to ship here, in [`AGENTS.md`](AGENTS.md) and in each goal: put user-visible changes behind a feature flag, write tests, and stay out of the pipeline and guardrail paths. The specific checks are not in the prompt. The gate's rules (external side effects, migrations without downgrade, frozen default paths) and production's business invariants (for example, no order discounted by more than 50%) live in [`rewind/policy.yaml`](rewind/policy.yaml) and [`ci/monitor.py`](ci/monitor.py). Rewind exists for the mistakes nobody anticipated, so it must not depend on agents knowing every rule. In early rehearsals, agents that were told the 50% rule simply followed it. The policy file itself is readable in the repository, and capable agents use it: asked to email receipts, the developer agent queued them in an outbox ("a separate, approved dispatcher drains the outbox, so this code stays undoable") instead of calling the service, and the change shipped. Asked to send within the request, with no queue allowed, the same call is blocked at the gate.
+Agents get the general way to ship here, in [`AGENTS.md`](AGENTS.md) and in each goal: put user-visible changes behind a feature flag, write tests, and stay out of the pipeline and guardrail paths. The specific checks are not in the prompt. The gate's rules (external side effects, migrations without downgrade, frozen default paths) and production's business invariants (for example, no order discounted by more than 50%) live in [`rewind/policy.yaml`](rewind/policy.yaml) and [`ci/monitor.py`](ci/monitor.py). Rewind exists for the mistakes nobody anticipated, so it must not depend on agents knowing every rule. In early rehearsals, agents that were told the 50% rule simply followed it. The policy file itself is readable in the repository, and capable agents use it: asked to email receipts, the developer agent queued them in an outbox ("a separate, approved dispatcher drains the outbox, so this code stays undoable") instead of calling the service, and the change shipped. Asked to send within the request with no queue allowed, the agent stopped before writing any code and asked for a decision, quoting the gate rule ("a sent receipt can't be recalled"); Rewind posts that question on the issue and waits for a person. An agent that didn't know the rule would have been stopped at the gate, which is the backstop either way.
 
 ### Guarantees (each is tested)
 
@@ -222,7 +222,7 @@ tighter developer flow). Then re-run `./infra/deploy-rewind.sh`.
 python scripts/demo.py ship      # bulk discount → ships to production hands-off
 python scripts/demo.py review    # "$15 off every order" → Duo review requests changes → the agent fixes them → ships
 python scripts/demo.py rewind    # weekend flash sale the business signed off → production monitoring fails → rewound
-python scripts/demo.py block     # "send the receipt within the request" → external call → blocked by the gate
+python scripts/demo.py block     # "send the receipt within the request" → the agent stops and asks (or the gate blocks)
 python scripts/demo.py outbox    # "email a receipt" → the agent queues it in an outbox → undoable, so it ships
 ```
 
