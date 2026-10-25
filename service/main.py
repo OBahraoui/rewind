@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -83,6 +84,8 @@ def create_app(settings: Settings | None = None, *, gitlab: Any = None, cloudrun
 
     app = FastAPI(title="Rewind", version="0.1.0", lifespan=lifespan, docs_url="/api/docs")
     app.state.engine, app.state.repo, app.state.orchestrator = engine, repo, orch
+    # The dashboard's data is public and read-only; other pages (the demo shop) may read it. Writes need a token.
+    app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["GET"], allow_headers=[])
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     app.mount("/mcp", mcp_app)
     templates = Jinja2Templates(directory=HERE / "templates")
@@ -243,6 +246,21 @@ def create_app(settings: Settings | None = None, *, gitlab: Any = None, cloudrun
                     change_set=cs, report=report, cells=views.stage_cells(ledger.STAGES, run.evidence),
                     evidence=evidence, track=views.run_track(run, report),
                     timeline=views.rewind_timeline(report) if report else None, total_s=total_s, covered=covered)
+
+    @app.get("/how", response_class=HTMLResponse)
+    def how_page(request: Request):
+        ensure_meta()
+        example = next((r for r in repo.summaries() if r["state"] == "rewound"
+                        and (r.get("rewind") or {}).get("mitigated_after_s") is not None), None)
+        return page(request, "how.html", nav="how", example=example)
+
+    @app.get("/connect", response_class=HTMLResponse)
+    def connect_page(request: Request):
+        ensure_meta()
+        public = settings.public_url or str(request.base_url).rstrip("/")
+        project_url = engine.ctx.meta.get("web_url", "")
+        host = project_url.split("://", 1)[-1].split("/", 1)[0] if project_url else "gitlab.com"
+        return page(request, "connect.html", nav="connect", public_url=public, gitlab_host=host)
 
     @app.get("/policy", response_class=HTMLResponse)
     def policy_page(request: Request):

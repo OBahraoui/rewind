@@ -36,9 +36,10 @@ def build_mcp(engine: Rewind, repo: RunRepository, public_url: str = "") -> tupl
             "classify": [{"kind": r.kind, "op": r.op, "class": r.cls.value, "reason": r.reason}
                          for r in policy.classify],
             "protected_paths": policy.gate.protected_paths,
-            "gate_rules": [{"id": r.id, "paths": r.paths, "verdict": r.verdict, "reason": r.reason,
-                            "instruction": r.instruction} for r in policy.gate.rules],
+            "gate_rules": [{"id": r.id, "paths": r.paths, "exclude_paths": r.exclude_paths, "verdict": r.verdict,
+                            "reason": r.reason, "instruction": r.instruction} for r in policy.gate.rules],
             "agent_privileges": policy.agent_privileges.model_dump(),
+            "review": policy.review.model_dump(),
         }
 
     @server.tool(description="Classify a planned action, e.g. kind=feature_flag op=updated, or "
@@ -55,7 +56,8 @@ def build_mcp(engine: Rewind, repo: RunRepository, public_url: str = "") -> tupl
     def check_paths(paths: list[str]) -> list[dict[str, Any]]:
         out = []
         for p in paths:
-            rules = [r.id for r in policy.gate.rules if any(path_matches(p, pat) for pat in r.paths)]
+            rules = [r.id for r in policy.gate.rules if any(path_matches(p, pat) for pat in r.paths)
+                     and not any(path_matches(p, pat) for pat in r.exclude_paths)]
             out.append({"path": p, "protected": policy.is_protected(p), "gate_rules": rules})
         return out
 

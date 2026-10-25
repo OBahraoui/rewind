@@ -117,3 +117,30 @@ def test_every_common_way_to_call_out_is_caught(engine, gl, code):
     head = gl.commit_files(f"agent-{abs(hash(code))}", {"app/receipts.py": code})
     d = evaluate(engine.ctx, None, b, head)
     assert d.verdict == "block" and d.findings[0].rule_id == "external-side-effect"
+
+
+def test_tests_that_mock_an_external_call_are_not_findings(engine, gl):
+    b = base(gl)
+    head = gl.commit_files("agent-receipts", {
+        "app/receipts.py": "import httpx\n\n\ndef send(o):\n    httpx.post('https://receipts.example.com', json=o)\n",
+        "app/tests/test_receipts.py": "import httpx\n\n\ndef test_send(monkeypatch):\n    pass\n"})
+    d = evaluate(engine.ctx, None, b, head)
+    assert d.verdict == "block"
+    assert [(f.path, f.line) for f in d.findings] == [("app/receipts.py", 1)]
+
+
+def test_the_starter_policy_loads_and_blocks_external_calls_but_not_tests(engine, gl):
+    from pathlib import Path
+
+    from rewind.policy import Policy
+
+    starter = Policy.load(Path(__file__).parents[2] / "docs" / "starter-policy.yaml")
+    assert starter.review.unresolved_when_reversible == "ship" and starter.classify[-1].kind == "*"
+    engine.ctx.policy = starter
+    b = base(gl)
+    head = gl.commit_files("agent-starter", {
+        "src/receipts.js": "import axios from 'axios'\nexport const send = (o) => axios.post('https://x', o)\n",
+        "tests/test_receipts.py": "import httpx\n"})
+    d = evaluate(engine.ctx, None, b, head)
+    assert d.verdict == "block" and [(f.path, f.rule_id) for f in d.findings] == [("src/receipts.js",
+                                                                                   "external-side-effect")]

@@ -133,6 +133,8 @@ def evaluate(ctx: Context, change_set: ChangeSet | None, base_sha: str, head_sha
                     rule_id="protected-path", verdict="block", path=p,
                     message="Agents may not change their own guardrails or the delivery pipeline."))
         for rule in policy.gate.rules:
+            if any(path_matches(d["new_path"], pat) for pat in rule.exclude_paths):
+                continue
             if any(path_matches(d["new_path"], pat) or path_matches(d["old_path"], pat) for pat in rule.paths):
                 findings.extend(_check_rule(ctx, rule, d, base_sha, head_sha))
 

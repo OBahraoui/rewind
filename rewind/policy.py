@@ -41,6 +41,7 @@ class ClassifyRule(BaseModel):
 class GateRule(BaseModel):
     id: str
     paths: list[str]
+    exclude_paths: list[str] = Field(default_factory=list)  # e.g. tests that only mock the external call
     verdict: Literal["block", "reroute"]
     reason: str
     instruction: str = ""

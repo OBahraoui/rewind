@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}How it works · Rewind{% endblock %}
+{% block description %}How Rewind lets GitLab Duo agents ship anything it can undo, stops what it can't, and takes a release back when production regresses.{% endblock %}
+{% block content %}
+<div class="stack">
+  <section class="hero">
+    <h1>How Rewind works</h1>
+    <p class="lede">Rewind runs beside GitLab Duo's agents. It doesn't need them to be perfect: it makes what they do
+      undoable, stops what can't be undone, and takes everything back when production says no.</p>
+  </section>
+
+  <figure class="card card-pad diagram">
+    {% include "_architecture.svg" %}
+    <figcaption class="muted small">The only coloured path is the rewind, in mitigation order: traffic first, then the
+      flag, code, merge request and issue, then a check against the checkpoint.</figcaption>
+  </figure>
+
+  <section aria-labelledby="loop-h">
+    <header><h2 id="loop-h">One run, start to finish</h2><span class="muted small">label an issue <code>{{ trigger_label }}</code> and walk away</span></header>
+    <ol class="steps">
+      <li><b>Checkpoint.</b> Before any agent acts, Rewind snapshots everything they can touch: code, branches,
+        merge requests, issues, labels, feature flags, CI/CD variables (fingerprints only), tags, releases, and which
+        Cloud Run revision serves each environment.</li>
+      <li><b>Agents build.</b> Duo flows plan the work and open a merge request. Each step gets its own checkpoint,
+        so every change is linked to the agent session that made it.</li>
+      <li><b>The gate.</b> Before merge, on the exact commit that would ship, every change is classified. Anything
+        irreversible is blocked, with the file and line that caused it.</li>
+      <li><b>Verify and review.</b> Tests and security scans run on the merge request. Failures and findings go back
+        to the agent, and every new commit is gated again. Duo reviews the code; what the agent can't resolve goes to
+        the review policy.</li>
+      <li><b>Merge and release.</b> Rewind merges the exact commit it gated. The pipeline deploys behind a feature
+        flag, and production monitoring watches.</li>
+      <li><b>Rewind.</b> If production regresses, Rewind opens an incident and undoes the whole change set: traffic and
+        flags within seconds, then code, merge request and issue. It compares the project with the checkpoint again
+        and closes its own incident when there's zero drift.</li>
+    </ol>
+    {% if example %}<p class="small" style="margin-top:12px"><a href="/runs/{{ example.id }}">See a real one: #{{ example.issue_iid }} {{ example.issue_title }}, production back in {{ example.rewind.mitigated_after_s | duration }}</a></p>{% endif %}
+  </section>
+
+  <section aria-labelledby="classes-h">
+    <header><h2 id="classes-h">Three kinds of change</h2><span class="muted small">autonomy is set by reversibility</span></header>
+    <div class="rules">
+      {% for cls, b in class_badges.items() %}
+      <div class="card rule">{{ m.badge(b) }}<p>{{ class_help[cls] }}</p>
+        <p class="muted">{% if loop.index == 1 %}Code, feature flags, labels, Cloud Run traffic.{% elif loop.index == 2 %}A merged merge request (reverted), a closed issue (reopened), a published release.{% else %}An email or call that left the system, a changed secret value, a migration with no way down.{% endif %}</p></div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section aria-labelledby="people-h" class="card card-pad">
+    <header><h2 id="people-h">People only where it matters</h2></header>
+    <dl class="kv">
+      <dt>Undoable work</dt><dd>Ships with nobody in the loop. Rewind can take it back.</dd>
+      <dt>Irreversible work</dt><dd>Stopped at the gate. Only a named person, through Rewind's authenticated API, can accept it, for one commit.</dd>
+      <dt>An agent with a question</dt><dd>When an agent stops instead of opening a merge request, Rewind puts its question on the issue and waits.</dd>
+      <dt>Review concerns</dt><dd>Go back to the agent first. What stays unresolved on a fully undoable change ships by policy and is watched; see <a href="/policy#trust-h">Who can do what</a>.</dd>
+      <dt>Anyone on the team</dt><dd>Can undo a run (<code>/rewind</code>) or stop one (<code>/rewind stop</code>) with a comment.</dd>
+    </dl>
+  </section>
+
+  <section aria-labelledby="limits-h">
+    <header><h2 id="limits-h">What it can't undo</h2></header>
+    <ul class="plain">
+      <li>A message that already left: an email, a webhook call, a payment. That's why the gate stops it before merge.</li>
+      <li>Data a migration destroyed with no way back. Migrations without a downgrade are blocked.</li>
+      <li>A CI/CD variable's old value. Rewind stores only a fingerprint, never the secret, so changing one is gated.</li>
+    </ul>
+    <p class="small" style="margin-top:14px"><a href="/connect">Connect your project</a> · <a href="/policy">Read the policy in force</a></p>
+  </section>
+</div>
+{% endblock %}

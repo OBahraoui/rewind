@@ -742,3 +742,16 @@ def test_an_agent_that_stops_silently_still_fails_plainly(orch, gl):
     finish_flow(gl, run, "develop")
     run = orch.advance(run.id)
     assert run.state is RunState.FAILED and "without opening a merge request" in run.error
+
+
+def test_a_gate_block_names_each_rule_once_with_where_it_fired():
+    from rewind.gate import Finding
+    from service.orchestrator import _findings_text
+
+    msg = "New code reaches an external system. Messages and calls that leave the system cannot be recalled."
+    text = _findings_text([Finding(rule_id="external-side-effect", verdict="block", message=msg,
+                                   path="app/receipts.py", line=13),
+                           Finding(rule_id="external-side-effect", verdict="block", message=msg,
+                                   path="app/notify.py", line=2)])
+    assert text == ("New code reaches an external system. Messages and calls that leave the system cannot be "
+                    "recalled (app/receipts.py:13, app/notify.py:2).")

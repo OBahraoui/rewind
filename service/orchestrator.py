@@ -67,6 +67,21 @@ GUARDED = {RunState.PLANNING, RunState.DEVELOPING, RunState.GATING, RunState.RER
            RunState.FIXING, RunState.REVIEWING, RunState.MERGING, RunState.RELEASING}
 
 # Duo's developer flow opens merge requests as drafts, and GitLab refuses to merge a draft.
+def _findings_text(findings: list[Any]) -> str:
+    """Each rule once, with where it fired: "New code reaches an external system (app/receipts.py:13)."."""
+    by_message: dict[str, list[str]] = {}
+    for f in findings:
+        where = f"{f.path}:{f.line}" if f.path and f.line else (f.path or "")
+        by_message.setdefault(f.message.rstrip("."), [])
+        if where:
+            by_message[f.message.rstrip(".")].append(where)
+    parts = []
+    for message, places in list(by_message.items())[:3]:
+        shown = ", ".join(places[:2]) + (f" and {len(places) - 2} more" if len(places) > 2 else "")
+        parts.append(f"{message}" + (f" ({shown})" if shown else ""))
+    return "; ".join(parts) + "."
+
+
 def _gist(comments: list[str]) -> str:
     """The reviewer's first real point: skips preambles like "I left two comments." and effort estimates."""
     for body in comments:
@@ -419,8 +434,7 @@ class Orchestrator:
                          f"gate rerouted: {decision.instructions[0] if decision.instructions else ''}")
         else:
             self._label(run, add=["rewind:needs-human"], remove=["rewind:reversible"])
-            reasons = "; ".join(f.message for f in decision.findings[:3])
-            self._block(run, f"Reversibility gate blocked MR !{run.mr_iid}: {reasons}")
+            self._block(run, f"Reversibility gate blocked MR !{run.mr_iid}: {_findings_text(decision.findings)}")
 
     def _on_rerouting(self, run: Run) -> None:
         status = self._flow_status(run, "develop")

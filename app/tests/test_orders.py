@@ -39,3 +39,8 @@ def test_storefront_page(client):
     r = client.get("/")
     assert r.status_code == 200 and "Rewind demo shop" in r.text
     assert "orders/quote" in r.text  # prices come from this revision's own API
+
+
+def test_health_says_where_rewind_is(client, monkeypatch):
+    monkeypatch.setenv("REWIND_URL", "https://rewind.example/")
+    assert client.get("/health").json()["rewind_url"] == "https://rewind.example"

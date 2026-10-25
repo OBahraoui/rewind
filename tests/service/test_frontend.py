@@ -156,6 +156,15 @@ def test_storefront_is_valid_and_self_contained():
     assert "orders/quote" in PAGE and "below cost" in PAGE
     assert "Guardrail: no order is ever charged less than half its subtotal." in PAGE
     assert 'id="announce" aria-live' in PAGE and 'class="ribbon" role="status"' not in PAGE  # announce changes only
+    assert 'id="rewind-strip"' in PAGE and "Protected by Rewind" in PAGE  # the shop shows what Rewind is doing
+
+
+def test_public_api_is_readable_from_other_sites_but_writes_are_not(world):
+    r = world.get("/api/runs", headers={"Origin": "https://shop.example"})
+    assert r.headers.get("access-control-allow-origin") == "*"
+    pre = world.options("/api/runs/x/approve", headers={"Origin": "https://shop.example",
+                                                          "Access-Control-Request-Method": "POST"})
+    assert pre.headers.get("access-control-allow-origin") is None or pre.status_code >= 400
 
 
 # -- view models ---------------------------------------------------------------
@@ -295,3 +304,15 @@ def test_run_pages_with_human_approvals_render():
     assert r.status_code == 200, r.text[:300]
     strict_parse(r.text)
     assert "accepted the risk for" in r.text and "accepted the code review's concerns for" in r.text
+
+
+def test_how_it_works_and_connect_pages(world):
+    for path, must in (("/how", ["How Rewind works", "One run, start to finish", "What it can't undo"]),
+                       ("/connect", ["/mcp/", "gate@main", "make setup &amp;&amp; make simulate", "rewind bootstrap"])):
+        r = world.get(path, headers={"accept": "text/html"})
+        assert r.status_code == 200, path
+        strict_parse(r.text)
+        for text in must:
+            assert text in r.text, (path, text)
+    nav = world.get("/").text
+    assert 'href="/how"' in nav and 'href="/connect"' in nav

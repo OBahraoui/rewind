@@ -26,3 +26,6 @@ Rewind — Build Plan*.pdf
 .codex/
 .cursor/
 .impeccable/
+
+# Rendered video files (large): make them with scripts/video/
+docs/video/build/

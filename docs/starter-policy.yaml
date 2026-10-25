@@ -1,0 +1,152 @@
+# Rewind starter policy: copy this into your project (e.g. as rewind-policy.yaml), point
+# REWIND_POLICY_PATH at it, and adapt the gate section to your code. The classification below is
+# generic and fails closed; keep it unless you add a new kind of state.
+#
+# Principle: let agents do anything Rewind can undo; stop them only for what it can't.
+# Autonomy is set by reversibility, not by a fixed approval level.
+#
+# Classes
+#   reversible     the exact prior state can be put back
+#   compensatable  the effect is neutralised by a new, recorded action (history is kept)
+#   irreversible   cannot be undone; Rewind gates it and never claims to undo it
+#
+# Agents may not edit this file: keep its path in gate.protected_paths.
+version: 1
+
+ignore:
+  # Rewind's status labels are bookkeeping. Objects Rewind creates (restore branches and MRs,
+  # incidents) are tracked by identity, never by name or label, so agents can't hide changes.
+  label_prefixes: ["rewind:"]
+
+# How Rewind recognises agent-made commits. Duo flows commit as a group service account,
+# so an agent commit that reaches the default branch without a gated merge is caught.
+agents:
+  commit_author_emails: ['^service_account_.*@noreply\.gitlab\.com$']
+  commit_author_names: ['^Duo ']
+
+# Security findings an agent introduced must be fixed (by the agent) before merge.
+security:
+  fix_severities: [Critical, High]
+  max_fix_attempts: 1
+
+# Duo code review requests changes the agent couldn't address. If the gate found everything this change ships
+# undoable, "ship" overrides the requested changes (recorded on the merge request with the reviewer's words) and
+# ships behind the flag: production monitoring and Rewind are the safety net. "human" stops for `rewind approve`.
+# Never applies to a change with anything irreversible in it.
+review:
+  unresolved_when_reversible: ship
+
+snapshot:
+  # Issues and MRs: every open one, plus closed ones updated in this window.
+  lookback_days: 30
+
+# First matching rule wins. Unknown changes fall through to the last rule: fail closed.
+classify:
+  - {kind: cloud_run, op: updated, class: reversible,
+     reason: "Traffic is pinned back to the checkpoint revision; Cloud Run keeps old revisions, so this takes seconds."}
+  - {kind: cloud_run, class: irreversible,
+     reason: "A Cloud Run service appearing or disappearing is outside Rewind's inverse set."}
+
+  - {kind: feature_flag, class: reversible,
+     reason: "Flag state and strategies are restored exactly."}
+
+  - {kind: label, class: reversible,
+     reason: "Project labels are recreated or removed exactly; memberships are restored on each issue and MR."}
+
+  - {kind: repository, op: updated, class: compensatable,
+     reason: "A restore commit returns the default branch tree to the checkpoint; the agent's commits stay in history for audit."}
+  - {kind: repository, class: irreversible,
+     reason: "The default branch itself was created or removed."}
+
+  - {kind: branch, op: updated, before: {protected: true}, class: irreversible,
+     reason: "Protected branches cannot be force-reset through the API."}
+  - {kind: branch, class: reversible,
+     reason: "Unprotected branches are deleted or recreated at their checkpoint commit."}
+
+  - {kind: tag, op: deleted, class: reversible,
+     reason: "The tag is recreated on the same commit."}
+  - {kind: tag, class: compensatable,
+     reason: "The tag is removed; anyone who already fetched it keeps a copy."}
+
+  - {kind: release, op: updated, class: reversible,
+     reason: "Release name and notes are restored."}
+  - {kind: release, class: compensatable,
+     reason: "The release is removed or recreated; notifications already sent cannot be recalled."}
+
+  - {kind: merge_request, op: deleted, class: irreversible,
+     reason: "A deleted merge request cannot be restored."}
+  - {kind: merge_request, after: {state: merged}, class: compensatable,
+     reason: "A merge cannot be un-merged: the code is restored by the repository restore and the MR is annotated."}
+  - {kind: merge_request, op: created, class: compensatable,
+     reason: "The MR is closed with a note instead of deleted, so the record stays."}
+  - {kind: merge_request, op: updated, class: reversible,
+     reason: "State, title, labels and draft status are restored."}
+
+  - {kind: issue, op: deleted, class: irreversible,
+     reason: "A deleted issue cannot be restored."}
+  - {kind: issue, op: created, class: compensatable,
+     reason: "The issue is closed with a note instead of deleted, so the record stays."}
+  - {kind: issue, op: updated, class: reversible,
+     reason: "State, title, labels and assignees are restored."}
+
+  - {kind: ci_variable, op: created, class: reversible,
+     reason: "The new variable is deleted."}
+  - {kind: ci_variable, op: updated, fields_any: [value_fp], class: irreversible,
+     reason: "Rewind stores only a keyed fingerprint of variable values, never the value, so it cannot put an old value back."}
+  - {kind: ci_variable, op: updated, class: reversible,
+     reason: "Variable settings (protected, masked, raw, type) are restored."}
+  - {kind: ci_variable, op: deleted, class: irreversible,
+     reason: "The deleted value was never stored, so it cannot be recreated."}
+
+  - {kind: "*", class: irreversible,
+     reason: "No known inverse for this kind of change; Rewind fails closed."}
+
+# Duo Agent Platform privileges per step of the autonomous loop. Privileges that
+# let an agent escape the checkpoint are never granted, whatever a step asks for.
+agent_privileges:
+  never:
+    - start_flows   # flows started by a flow act outside this run's checkpoint
+  steps:
+    plan: [read_only_files, read_only_gitlab, read_write_gitlab, run_mcp_tools]
+    develop: [read_write_files, read_only_gitlab, read_write_gitlab, use_git, run_commands]
+    review: [read_only_files, read_only_gitlab, read_write_gitlab]
+    fix: [read_write_files, read_only_gitlab, read_write_gitlab, use_git, run_commands]
+    secfix: [read_write_files, read_only_gitlab, read_write_gitlab, use_git, run_commands]
+
+# The reversibility gate runs on the MR before merge: the last point where nothing has shipped.
+gate:
+  # Agents may not change their own guardrails or the delivery pipeline. Add your deploy and infra paths.
+  protected_paths:
+    - "rewind-policy.yaml"
+    - ".gitlab-ci.yml"
+    - ".gitlab/**"
+    - "infra/**"
+    - "deploy/**"
+    - "AGENTS.md"
+
+  rules:
+    - id: external-side-effect
+      # Adapt the paths and the pattern to your stack. This covers common Python and JavaScript clients.
+      paths: ["**/*.py", "**/*.js", "**/*.ts"]
+      exclude_paths: ["tests/**", "**/tests/**", "**/test_*.py", "**/*.test.ts", "**/*.test.js"]
+      added_must_not_match: '\b(requests|httpx|aiohttp|urllib3?|urlopen|http\.client|smtplib|socket|boto3|grpc|axios|node-fetch|nodemailer)\b|\bfetch\(|\bsend_(email|sms|notification)\b'
+      verdict: block
+      reason: "New code reaches an external system. Messages and calls that leave the system cannot be recalled."
+      instruction: "Write the message to a queue or outbox instead of sending it, so the code stays undoable; sending becomes a separate step a human approves once."
+
+    - id: migration-without-downgrade
+      paths: ["**/migrations/*.py"]
+      file_must_match: 'def\s+downgrade\s*\('
+      verdict: block
+      reason: "A schema migration without downgrade() cannot be rolled back."
+
+    # Example of a reroute: keep the live code path frozen so new behaviour ships behind a flag.
+    # - id: default-path-frozen
+    #   paths: ["src/pricing.py"]
+    #   frozen_functions: ["legacy_total"]
+    #   verdict: reroute
+    #   reason: "User-visible pricing changes must ship behind a feature flag."
+    #   instruction: "Leave legacy_total() alone; implement the change in new_total(), which runs only when the flag is on."
+
+  # Re-route attempts before a rerouted MR is blocked.
+  max_reroutes: 1

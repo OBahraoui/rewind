@@ -22,9 +22,11 @@
 <header class="topbar">
   <div class="topbar-inner">
     <a class="brand" href="/" aria-label="Rewind home">{{ m.logo(26) }}<span>Rewind</span></a>
-    <span class="crumb">{{ project }}</span>
+    {% if project_url %}<a class="crumb" href="{{ project_url }}" title="{{ project }} on GitLab">{{ project.split("/") | last }}{{ m.icon("external", 12) }}</a>{% else %}<span class="crumb">{{ project }}</span>{% endif %}
     <nav class="nav" aria-label="Main">
       <a href="/" {% if nav == "runs" %}aria-current="page"{% endif %}>Runs</a>
+      <a href="/how" {% if nav == "how" %}aria-current="page"{% endif %}>How it works</a>
+      <a href="/connect" {% if nav == "connect" %}aria-current="page"{% endif %}>Connect</a>
       <a href="/policy" {% if nav == "policy" %}aria-current="page"{% endif %}>Policy</a>
       <a class="hide-sm" href="/api/docs">API</a>
       <button class="icon-btn theme" type="button" data-theme-toggle aria-label="Change theme">

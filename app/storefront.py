@@ -4,7 +4,7 @@ Every price on the page comes from this revision's own POST /orders/quote, so wh
 see is exactly what production charges. When pricing breaks, the page says so plainly.
 """
 
-PAGE = """<!doctype html>
+PAGE = r"""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -16,13 +16,15 @@ PAGE = """<!doctype html>
   color-scheme: light;
   --bg: #f7f2ea; --card: #fffdf9; --ink: #2a1d14; --ink-2: #5e4b3d; --ink-3: #75614f; --line: #e8dfd2;
   --brand: #7a4528; --brand-ink: #fff; --ribbon: #1e1813; --ribbon-ink: #efe6db;
+  --rw-bg: #ecebfd; --rw-ink: #2f2491; --rw-line: #d9d6fb;
   --ok: #0ca30c; --ok-ink: #1e7a1e; --ok-tint: #e6f4e2; --bad: #d03b3b; --bad-tint: #fbe4e1; --bad-ink: #9e2323;
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 @media (prefers-color-scheme: dark) {
   :root { color-scheme: dark; --bg: #15110d; --card: #1e1915; --ink: #f3ebe1; --ink-2: #cdbfb1; --ink-3: #998877;
     --line: #2f2822; --brand: #d0905f; --brand-ink: #1a120c; --ribbon: #0b0907; --ok-ink: #4cc34c; --ok-tint: #15301a;
-    --bad-tint: #3a1918; --bad-ink: #ff9b8f; }
+    --bad-tint: #3a1918; --bad-ink: #ff9b8f;
+    --rw-bg: #221f3d; --rw-ink: #c9c3ff; --rw-line: #322d5c; }
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--ink); line-height: 1.5; }
@@ -73,6 +75,14 @@ td.total.bad { color: var(--bad); }
 .amt { white-space: nowrap; }
 .panel.recovered .verdict { background: var(--ok-tint); }
 .guard { padding: 10px 20px; font-size: .8rem; color: var(--ink-3); border-top: 1px solid var(--line); }
+.rw { display: none; background: var(--rw-bg); color: var(--rw-ink); border-bottom: 1px solid var(--rw-line); font-size: .85rem; }
+.rw.on { display: block; }
+.rw .in { max-width: 1080px; margin: 0 auto; padding: 9px 20px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.rw svg { flex: none; }
+.rw b { font-weight: 650; }
+.rw a { color: inherit; font-weight: 600; margin-left: auto; text-underline-offset: 3px; }
+.rw.undoing { background: var(--rw-ink); color: var(--rw-bg); border-color: var(--rw-ink); }
+footer a { color: inherit; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 footer { max-width: 1080px; margin: 0 auto; padding: 0 20px 40px; color: var(--ink-3); font-size: .8rem; }
 .flash { animation: flash .6s ease-out; }
@@ -89,6 +99,10 @@ footer { max-width: 1080px; margin: 0 auto; padding: 0 20px 40px; color: var(--i
 <div class="ribbon">
   <div class="in" id="ribbon"><span><span class="dot"></span>Loading production status…</span></div>
 </div>
+<div class="rw" id="rewind-strip" role="status" aria-live="polite"><div class="in">
+  <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><circle cx="7" cy="24" r="5" fill="currentColor"/><path d="M27 8 14 24l13 16h7L21 24 34 8z" fill="currentColor"/><path d="M41 8 28 24l13 16h7L35 24 48 8z" fill="currentColor" opacity=".5"/></svg>
+  <span id="rewind-text"></span><a id="rewind-link" href="#">See the run</a>
+</div></div>
 <p class="sr-only" id="announce" aria-live="assertive"></p>
 <header class="brand">
   <div class="logo" aria-hidden="true">
@@ -117,7 +131,7 @@ footer { max-width: 1080px; margin: 0 auto; padding: 0 20px 40px; color: var(--i
   </section>
 </main>
 <footer>Rewind demo shop. Refreshes every 2 seconds; every price comes from <code>POST /orders/quote</code> on the
-revision shown above, and production monitoring checks the same guardrail.</footer>
+revision shown above, and production monitoring checks the same guardrail.<span id="protected"></span></footer>
 <script>
 "use strict";
 const BASKETS = [
@@ -140,6 +154,36 @@ const clock = (d) => d.toLocaleTimeString([], {hour: "2-digit", minute: "2-digit
 const say = (text) => { const el = document.getElementById("announce"); el.textContent = ""; setTimeout(() => { el.textContent = text; }, 50); };
 const esc = (s) => String(s).replace(/[&<>"]/g, (ch) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[ch]));
 let lastBroken = null;
+let rewindUrl = "";
+const ago = (iso) => Math.max(0, (Date.now() - Date.parse(iso)) / 1000);
+async function rewindStrip() {
+  if (!rewindUrl) return;
+  const strip = document.getElementById("rewind-strip");
+  try {
+    const runs = await (await fetch(rewindUrl + "/api/runs", {cache: "no-store"})).json();
+    const undoing = runs.find((r) => r.state === "rewinding");
+    const watching = runs.find((r) => r.state === "releasing");
+    const restored = runs.find((r) => r.state === "rewound" && r.rewind && ago(r.updated_at) < 20 * 60);
+    const run = undoing || watching || restored;
+    strip.classList.toggle("on", !!run);
+    strip.classList.toggle("undoing", !!undoing);
+    if (!run) return;
+    const base = (run.issue_url || "").replace(/\/-\/(work_items|issues)\/\d+$/, "");
+    let text;
+    if (undoing) {
+      const inc = run.incident_iid ? ` · <a href="${esc(base)}/-/issues/${run.incident_iid}" style="margin:0">incident #${run.incident_iid}</a>` : "";
+      text = `<b>Rewind is undoing this release</b>: traffic, flags and code go back to the checkpoint${inc}`;
+    } else if (watching) {
+      text = `<b>Rewind is watching this release</b> (issue #${run.issue_iid}). If production breaks, it undoes the whole change set.`;
+    } else {
+      const rw = run.rewind;
+      const secs = rw.mitigated_after_s != null ? ` in ${rw.mitigated_after_s.toFixed(1)}s` : "";
+      text = `<b>Restored by Rewind</b>: production back${secs} · ${rw.zero_drift ? "zero drift" : "drift found"}`;
+    }
+    document.getElementById("rewind-text").innerHTML = text;
+    document.getElementById("rewind-link").href = `${rewindUrl}/runs/${encodeURIComponent(run.id)}`;
+  } catch (e) { /* Rewind unreachable: the shop keeps working */ }
+}
 let brokeAt = null, brokenRevision = null, recovered = null;
 async function refresh() {
   try {
@@ -148,6 +192,12 @@ async function refresh() {
     const flagHtml = flags.length ? flags.map(([k, v]) => `<span class="pill${v ? " on" : ""}">${esc(k)}: ${v ? "on" : "off"}</span>`).join(" ")
       : '<span class="pill">no flags on</span>';
     const flagsOk = (health.flags_status || "ok") === "ok" || health.flags_status === "unconfigured";
+    if (health.rewind_url && !rewindUrl) {
+      rewindUrl = health.rewind_url;
+      document.getElementById("protected").innerHTML = ` <a href="${esc(rewindUrl)}">Protected by Rewind</a>.`;
+      rewindStrip();
+      setInterval(rewindStrip, 4000);
+    }
     const products = await (await fetch("products", {cache: "no-store"})).json();
     document.getElementById("products").innerHTML = Object.entries(products).map(([sku, p]) =>
       `<div class="product"><div class="art" aria-hidden="true"><svg width="44" height="44" viewBox="0 0 24 24" fill="none"

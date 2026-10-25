@@ -59,6 +59,7 @@ def health() -> dict:
         "environment": os.environ.get("UNLEASH_APP_NAME", "local"),
         "flags": flags.snapshot(),
         "flags_status": flags.status(),
+        "rewind_url": os.environ.get("REWIND_URL", "").rstrip("/"),  # the shop shows what Rewind is doing
     }
 
 

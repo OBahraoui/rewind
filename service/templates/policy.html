@@ -31,7 +31,7 @@
       {% for r in gate.rules %}
       <div class="card rule">
         {{ m.badge(gate_badges[r.verdict]) }} <b class="mono small">{{ r.id }}</b>
-        <div class="k" style="margin-top:6px">{{ r.paths | join(", ") }}</div>
+        <div class="k" style="margin-top:6px">{{ r.paths | join(", ") }}{% if r.exclude_paths %} · not {{ r.exclude_paths | join(", ") }}{% endif %}</div>
         <p>{{ r.reason }}</p>
         {% if r.instruction %}<p class="muted">{% if r.verdict == "reroute" %}What the agent is told to do instead{% else %}How to ship it safely{% endif %}: {{ r.instruction | replace("`", "") }}</p>{% endif %}
       </div>

@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Connect · Rewind{% endblock %}
+{% block description %}Use Rewind: run it on a GitLab project, add its reversibility gate to any pipeline, connect agents over MCP, and drive it from GitLab comments or the CLI.{% endblock %}
+{% block content %}
+{%- set component = gitlab_host ~ "/" ~ project ~ "/gate@main" -%}
+<div class="stack">
+  <section class="hero">
+    <h1>Connect</h1>
+    <p class="lede">From a one-line pipeline change to a fully hands-off project, or a look without any account.</p>
+  </section>
+
+  <section class="card card-pad" aria-labelledby="gate-h">
+    <header><h2 id="gate-h">Add the gate to any pipeline</h2><span class="muted small">no token, no service, one include</span></header>
+    <p>The reversibility gate is a CI/CD component. On merge request pipelines its <code>rewind-gate</code> job fails when
+      a change contains something that can't be undone, with the file, line and evidence in the test report. The policy
+      is read from the merge request's base, so a change can't relax the rules checking it.</p>
+    {{ m.copy_block("include:\n  - component: " ~ component ~ "\n    inputs:\n      policy: path/to/your-policy.yaml   # optional\n      fail_on: block                    # or reroute", "the CI/CD component include") }}
+  </section>
+
+  <section class="card card-pad" aria-labelledby="mcp-h">
+    <header><h2 id="mcp-h">Let agents ask before they act (MCP)</h2><span class="muted small">read-only tools</span></header>
+    <p>Rewind serves an MCP server. Agents call it to check a plan against the policy before touching anything.</p>
+    {{ m.copy_cmd(public_url ~ "/mcp/", "the MCP server address") }}
+    <p class="small" style="margin-top:14px"><b>GitLab Duo:</b> commit this as <code>.gitlab/duo/mcp.json</code> on the default branch.</p>
+    {{ m.copy_block('{\n  "mcpServers": {\n    "rewind": {\n      "type": "http",\n      "url": "' ~ public_url ~ '/mcp/",\n      "approvedTools": ["rewind_policy", "classify_action", "check_paths",\n                        "list_checkpoints", "get_ledger", "explain_checkpoint"]\n    }\n  }\n}', "the Duo MCP configuration") }}
+    <p class="small" style="margin-top:14px"><b>Claude Code, Cursor or any MCP client:</b></p>
+    {{ m.copy_cmd("claude mcp add --transport http rewind " ~ public_url ~ "/mcp/", "the Claude Code command") }}
+    <dl class="kv tools">
+      <dt><code>classify_action</code></dt><dd>Is this action reversible, compensatable or irreversible, and may it run hands-off?</dd>
+      <dt><code>check_paths</code></dt><dd>Which of these files are protected, and which gate rules apply to them.</dd>
+      <dt><code>rewind_policy</code></dt><dd>The whole policy in force: classes, gate rules, protected paths, privileges, review policy.</dd>
+      <dt><code>get_ledger</code></dt><dd>The ledger of a run, by run id or issue number.</dd>
+      <dt><code>list_checkpoints</code>, <code>explain_checkpoint</code></dt><dd>Recent checkpoints, and everything that changed since one.</dd>
+    </dl>
+  </section>
+
+  <section class="card card-pad" aria-labelledby="gitlab-h">
+    <header><h2 id="gitlab-h">Drive it from GitLab</h2></header>
+    <dl class="kv">
+      <dt>Start a run</dt><dd>Label an issue <code>{{ trigger_label }}</code>. Rewind posts a ledger on it and keeps it current.</dd>
+      <dt>Undo a run</dt><dd>Comment <code>/rewind</code> on the issue or merge request (Developer role or higher).</dd>
+      <dt>Stop a run</dt><dd>Comment <code>/rewind stop</code>.</dd>
+      <dt>Status, plan</dt><dd><code>/rewind status</code>, <code>/rewind dry-run</code>, <code>/rewind help</code>.</dd>
+      <dt>Accept the irreversible</dt><dd>Never by comment: <code>rewind approve &lt;run&gt; --reason "…"</code> with Rewind's API token.</dd>
+    </dl>
+  </section>
+
+  <section class="card card-pad" aria-labelledby="own-h">
+    <header><h2 id="own-h">Run Rewind on your project</h2><span class="muted small">about 20 minutes</span></header>
+    <p>You need GitLab Premium or Ultimate with the Duo Agent Platform and the Maintainer role, a pipeline that deploys
+      with a job that fails when production is wrong, and somewhere to run Rewind's service (the scripts use Cloud Run).
+      One Rewind instance serves one project.</p>
+    {{ m.copy_block("git clone " ~ project_url ~ ".git rewind && cd rewind\nmake setup && cp .env.example .env\n.venv/bin/rewind keys >> .env     # then set GITLAB_TOKEN, GITLAB_PROJECT_ID, Google Cloud values\n.venv/bin/rewind doctor           # token, role, Duo access, APIs\n./infra/gcp-setup.sh              # bucket, service accounts, keyless CI auth\n./infra/deploy-rewind.sh          # the Rewind service; prints REWIND_PUBLIC_URL\n.venv/bin/rewind bootstrap        # webhook, labels, feature flag, CI/CD variables", "the setup commands") }}
+    <p class="small" style="margin-top:12px"><a href="{{ project_url }}/-/blob/main/docs/use-rewind-on-your-project.md">The full guide</a>: what your pipeline and monitoring need, a starter policy, and what to adapt.</p>
+  </section>
+
+  <section class="card card-pad" aria-labelledby="try-h">
+    <header><h2 id="try-h">Try it without any account</h2></header>
+    <p>The whole loop runs offline against an in-memory GitLab and Cloud Run, with this dashboard on port 8080.</p>
+    {{ m.copy_block("git clone " ~ project_url ~ ".git rewind && cd rewind\nmake setup && make simulate", "the offline simulation commands") }}
+  </section>
+
+  <section class="card card-pad" aria-labelledby="api-h">
+    <header><h2 id="api-h">API</h2></header>
+    <dl class="kv">
+      <dt><a href="/api/runs">/api/runs</a></dt><dd>Every run, newest first (JSON).</dd>
+      <dt><code>/api/runs/&lt;id&gt;</code></dt><dd>One run with its change set.</dd>
+      <dt><code>/api/rewinds/&lt;id&gt;</code></dt><dd>A rewind report: steps, timings, verification.</dd>
+      <dt><a href="/api/docs">/api/docs</a></dt><dd>Interactive reference. Writes (approve, stop, rewind) need the API token.</dd>
+    </dl>
+  </section>
+</div>
+{% endblock %}

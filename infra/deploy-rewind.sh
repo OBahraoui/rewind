@@ -65,7 +65,7 @@ echo "→ smoke test: every page, every run, on the live service"
 python3 - "$URL" <<'PY'
 import json, sys, urllib.error, urllib.request
 url = sys.argv[1].rstrip("/")
-paths = ["/", "/policy", "/health"] + [f"/runs/{r['id']}" for r in json.load(urllib.request.urlopen(url + "/api/runs"))]
+paths = ["/", "/how", "/connect", "/policy", "/health"] + [f"/runs/{r['id']}" for r in json.load(urllib.request.urlopen(url + "/api/runs"))]
 bad = []
 for path in paths:
     try:

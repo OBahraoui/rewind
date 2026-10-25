@@ -29,6 +29,8 @@ variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
   APP_IMAGE: "$CI_REGISTRY_IMAGE/app:$CI_COMMIT_SHA"
   GCLOUD_IMAGE: "gcr.io/google.com/cloudsdktool/google-cloud-cli:alpine"
+  # Public dashboard URL; the demo shop links to what Rewind is doing. A project CI/CD variable overrides it.
+  REWIND_PUBLIC_URL: "https://rewind-twegh4u3wa-ew.a.run.app"
 
 default:
   interruptible: true

@@ -22,9 +22,10 @@ the project was verified against the checkpoint again.</sub></p>
 
 ## Why
 
-Agents can now take an issue all the way to production on GitLab. But when an agent gets it
-wrong at 2 a.m., there is no undo for *what the agent did*: the merge, the flag it switched
-on, the release it cut, the revision it deployed.
+Agents can now take an issue all the way to production on GitLab. Rewind is about life after
+code: once an agent has written it, something has to ship it, watch it, and take it back. When an
+agent gets it wrong at 2 a.m., there is no undo for *what the agent did*: the merge, the flag it
+switched on, the release it cut, the revision it deployed.
 
 **Rewind lets agents do anything it can undo, and stops them only for what it can't.**
 Autonomy is set by reversibility, not by a fixed approval level.
@@ -180,8 +181,9 @@ These ran on this GitLab project and its Google Cloud deployment, not in a simul
 ## Duo Agent Platform features used
 
 - **Flows via API**: plan, develop, review, fix-pipeline and security-fix steps, started with least-privilege `agent_privileges` per step (from policy). Ambient flows run without per-tool prompts, and Rewind fails a run that stalls waiting for approval. `start_flows` is never granted, because a flow that starts flows would act outside the checkpoint.
-- **Custom flows (Flow Registry v1)**: [`rewind_planner`](flows/rewind_planner.yml), [`rewind_release`](flows/rewind_release.yml) (tighter toolset), [`rewind_explainer`](flows/rewind_explainer.yml) (mention trigger).
-- **Custom agent**: [Rewind explainer](agents/rewind-explainer.md) for Duo Chat.
+- **Code review, all the way through**: the code review flow's requested changes go back to the developer agent with the reviewer's words; what stays unresolved goes to the review policy, and an accepted override is applied through GitLab's API and recorded on the merge request.
+- **Agents that stop to ask**: when the developer agent ends without a merge request, Rewind reads its last message from the session and posts it on the issue.
+- **Custom flows and agent, ready to enable**: [`rewind_planner`](flows/rewind_planner.yml), [`rewind_release`](flows/rewind_release.yml) (tighter toolset), [`rewind_explainer`](flows/rewind_explainer.yml) (for a mention trigger) and the [Rewind explainer agent](agents/rewind-explainer.md) are written to the Flow Registry v1 and agent formats. Creating them in the AI Catalog and adding triggers needs the Maintainer role, so the hands-off loop runs on the foundational flows above, started by Rewind's own trigger: the issue label.
 - **MCP**: Rewind serves read-only MCP tools at `/mcp/` (`classify_action`, `check_paths`, `rewind_policy`, `get_ledger`, `explain_checkpoint`), so agents can ask *before* they act. See [`.gitlab/duo/mcp.json`](.gitlab/duo/mcp.json).
 - **Agent runtime**: [`.gitlab/duo/agent-config.yml`](.gitlab/duo/agent-config.yml) sets up tests and restricts the sandbox network, so agents can't reach external systems. [`AGENTS.md`](AGENTS.md) carries the rules.
 - **Agent sessions**: every flow's session page is linked from the ledger and dashboard, next to the changes it made.
@@ -191,6 +193,8 @@ These ran on this GitLab project and its Google Cloud deployment, not in a simul
 Incident Management (incidents opened and resolved by Rewind), Feature Flags (Unleash API, per-environment strategies), Environments and Deployments (rollbacks recorded on the environment page), Releases, the container registry, security scanners, test and coverage reports, CI/CD components, webhooks (issues, MRs, pipelines, jobs, comments), and `id_tokens` for keyless Google Cloud deploys.
 
 ## Setup from a fresh GitLab and Google Cloud account
+
+To use Rewind on your own project, start with [docs/use-rewind-on-your-project.md](docs/use-rewind-on-your-project.md): what a project needs, the contract with your pipeline, a [starter policy](docs/starter-policy.yaml), and today's limits. The steps below set up this repository end to end.
 
 Prerequisites: Python 3.12+, `gcloud`, a GitLab project with Duo Agent Platform access (Maintainer), and a Google Cloud project with billing.
 
