@@ -4,7 +4,8 @@
   python scripts/demo.py ship      # bulk discount: ships to production
   python scripts/demo.py review    # launch promo: Duo review requests changes, the agent fixes them, it ships
   python scripts/demo.py rewind    # flash sale signed off by the business: breaks production, gets rewound
-  python scripts/demo.py block     # email receipts: blocked by the reversibility gate
+  python scripts/demo.py block     # send a receipt within the request: blocked by the reversibility gate
+  python scripts/demo.py outbox    # email receipts: the agent queues them in an outbox, so it stays undoable
   python scripts/demo.py ship --no-label   # create the issue, label it yourself on camera
   python scripts/demo.py rewind --watch    # ...and follow the run live in this terminal
 """
@@ -18,7 +19,7 @@ from rewind.config import Settings
 from rewind.gitlab import GitLabClient
 
 SCENARIOS = {"ship": "01-bulk-discount.md", "review": "02-launch-promo.md", "rewind": "04-weekend-flash-sale.md",
-             "block": "03-email-receipts.md"}
+             "block": "05-receipt-in-the-request.md", "outbox": "03-email-receipts.md"}
 
 
 def main() -> None:
