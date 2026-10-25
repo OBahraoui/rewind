@@ -201,7 +201,7 @@
       <section class="card card-pad" aria-labelledby="ap-h">
         <header><h3 id="ap-h">Human approvals</h3></header>
         <ul class="list">{% for a in run.approvals %}
-          <li><div class="grow"><b>{{ a.by }}</b> accepted the risk for <code>{{ a.sha[:8] }}</code><span class="by">{{ a.reason }} · {{ a.at.strftime('%d %b %H:%M') }} UTC</span></div></li>
+          <li><div class="grow"><b>{{ a.by }}</b> accepted {% if a.covers | select("match", "review[|]") | list %}the code review's concerns{% else %}the risk{% endif %} for <code>{{ a.sha[:8] }}</code><span class="by">{{ a.reason }} · {{ a.at.strftime('%d %b %H:%M') }} UTC</span></div></li>
         {% endfor %}</ul>
       </section>
       {% endif %}

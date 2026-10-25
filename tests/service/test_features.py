@@ -550,3 +550,63 @@ def test_a_merge_that_times_out_says_what_it_waited_for(orch, gl):
     run = orch.advance(run.id)
     assert run.state is RunState.FAILED
     assert run.error == "timed out while merging (it needs approval from a human reviewer)"
+
+
+QUESTIONS = ["Please confirm that the sign-off covers unlimited free $0 orders.", "Add a test at exactly 1500."]
+
+
+def blocked_by_review_without_a_change(orch, gl):
+    """The review asks questions only a human can answer; the agent pushes nothing."""
+    _, mr, run = to_review(orch, gl)
+    gl.review(mr, QUESTIONS, request_changes=True)
+    finish_flow(gl, run, "review")
+    orch.advance(run.id)
+    run = orch.advance(run.id)
+    assert run.state is RunState.FIXING
+    finish_flow(gl, run, "reviewfix")  # done, but no new commit
+    return mr, orch.advance(run.id)
+
+
+def test_a_review_fix_that_changes_nothing_stops_for_a_human_without_reviewing_again(orch, gl):
+    _, run = blocked_by_review_without_a_change(orch, gl)
+    assert run.state is RunState.BLOCKED
+    assert "pushed no change" in run.error and "Please confirm that the sign-off covers" in run.error
+    assert "rewind approve" in run.error
+    reviews = [c for c in gl.calls if c[0] == "start_workflow" and c[2].get("workflow_definition") == "code_review/v1"]
+    assert len(reviews) == 1  # the same commit isn't reviewed twice
+
+
+def test_a_human_can_accept_the_reviews_concerns_for_one_commit(orch, gl):
+    mr, run = blocked_by_review_without_a_change(orch, gl)
+    reviews_before = sum(1 for c in gl.calls if c[0] == "start_workflow")
+    run = orch.approve(run.id, by="Othmane", reason="Finance confirmed unlimited free orders for the sale")
+    # Gated again (same commit), pipeline already green, not reviewed again, merged once GitLab lets it through.
+    for _ in range(4):
+        if run.state is RunState.RELEASING:
+            break
+        run = orch.advance(run.id)
+    assert run.state is RunState.RELEASING, run.timeline[-1]
+    assert sum(1 for c in gl.calls if c[0] == "start_workflow") == reviews_before
+    assert any(c[0] == "update_merge_request" and c[2].get("reviewer_ids") == [0] for c in gl.calls)
+    notes = [n["body"] for n in gl.mr_notes[mr]]
+    assert any("accepted the code review's open concerns" in b and "unassigned @GitLabDuo" in b for b in notes)
+    assert any("Please confirm" in b for b in notes)  # the review's comments stay
+    assert run.approvals[-1].covers == [f"review|{run.gated_sha}"]
+
+
+def test_accepting_a_review_is_bound_to_its_commit(orch, gl):
+    mr, run = blocked_by_review_without_a_change(orch, gl)
+    run = orch.approve(run.id, by="Othmane", reason="accepted")
+    gl.commit_files("agent/feature", {"app/pricing.py": gl.tree("agent/feature")["app/pricing.py"] + "#\n"})
+    run = orch.advance(run.id)  # a new commit: gated again, and the approval no longer applies to its review
+    assert run.state in (RunState.GATING, RunState.TESTING)
+    assert not orch._review_accepted(run, gl.get_merge_request(mr)["sha"])
+
+
+def test_a_run_blocked_by_review_before_the_upgrade_can_still_be_accepted(orch, gl):
+    _, run = blocked_by_review_without_a_change(orch, gl)
+    run.extra.pop("blocked_by")  # what a run blocked by the previous version looks like
+    run.error = "Duo code review still requests changes on MR !1 after 1 agent fix attempt(s)"
+    orch.repo.save(run)
+    run = orch.approve(run.id, by="Othmane", reason="accepted")
+    assert run.approvals[-1].covers == [f"review|{run.gated_sha}"]
