@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
-from app import pricing
+from app import pricing, receipts
 from app.catalog import PRODUCTS
 from app.flags import flags
 from app.store import orders
@@ -75,7 +75,10 @@ def quote(req: OrderRequest) -> dict:
 
 @app.post("/orders", status_code=201)
 def create_order(req: OrderRequest) -> dict:
-    return orders.add({**_price(req), "created_at": time.time()})
+    order = orders.add({**_price(req), "created_at": time.time()})
+    if flags.is_enabled("order_receipts", req.customer_id):
+        receipts.enqueue_receipt(order)
+    return order
 
 
 @app.get("/orders")
