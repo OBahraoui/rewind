@@ -334,11 +334,7 @@ class FakeGitLab:
             m["labels"] = sorted(set(m["labels"]) | set(fields.pop("add_labels").split(",")))
         if "remove_labels" in fields:
             m["labels"] = sorted(set(m["labels"]) - set(fields.pop("remove_labels").split(",")))
-        if "reviewer_ids" in fields:  # unassigning the reviewer who requested changes lifts their block
-            keep = set(fields.pop("reviewer_ids")) - {0}
-            m["reviewers"] = [u for u in m.get("reviewers", []) if u["id"] in keep]
-            if not any(m.get("review_states", {}).get(u["id"]) == "requested_changes" for u in m["reviewers"]):
-                m["review_status"] = None
+        # As on GitLab, unassigning the reviewer who requested changes does not lift their block.
         m.update(fields)
         m["updated_at"] = now()
         return self._mr_json(iid)
@@ -393,10 +389,9 @@ class FakeGitLab:
         m["review_status"] = "requested_changes" if request_changes else None
 
     @locked
-    def merge_request_reviewers(self, iid: int) -> list[dict]:
-        m = self.mrs[iid]
-        return [{"user": u, "state": m.get("review_states", {}).get(u["id"], "unreviewed")}
-                for u in m.get("reviewers", [])]
+    def bypass_requested_changes(self, iid: int) -> None:
+        """A person who can merge selects Bypass next to the change request (GitLab UI only)."""
+        self.mrs[iid]["review_status"] = None
 
     @locked
     def create_mr_note(self, iid: int, body: str) -> dict:

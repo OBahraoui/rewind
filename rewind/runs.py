@@ -60,6 +60,11 @@ class Approval(BaseModel):
     def accepts(self, sha: str, fingerprints: set[str]) -> bool:
         return self.sha == sha and fingerprints <= set(self.covers)
 
+    @property
+    def of_review(self) -> bool:
+        """It accepted a code review's open concerns (rather than something Rewind can't undo)."""
+        return any(c.startswith("review|") for c in self.covers)
+
 
 def gate_fingerprints(gate: Any) -> set[str]:
     return {f"gate|{f.rule_id}|{f.path}|{f.message}" for f in (gate.findings if gate else [])}

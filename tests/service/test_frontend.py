@@ -276,3 +276,22 @@ def test_an_undone_blocked_run_shows_its_failure_as_history_not_an_alert():
     assert 'class="alert tone-critical"' not in html and "stays open and unmerged" not in html
     assert "Before the rewind, the run had stopped: Reversibility gate blocked" in html
     assert 'class="station regressed"' not in html  # an undo someone asked for: nothing "regressed"
+
+
+def test_run_pages_with_human_approvals_render():
+    """Both kinds of approval: accepting what Rewind can't undo, and accepting a code review's concerns."""
+    from rewind.runs import Approval
+
+    tmp = tempfile.mkdtemp()
+    app, gl, cr = simulate.build(tmp)
+    run = simulate.run_scenario(app, gl, cr, "Receipts", "return subtotal(lines)", monitor_ok=True,
+                                extra={"app/receipts.py": "import httpx\n"})
+    orch = app.state.orchestrator
+    run = orch.approve(run.id, by="Othmane", reason="receipts are worth it")
+    run.approvals.append(Approval(by="Othmane", reason="finance confirmed", sha="ee912981", covers=["review|ee912981"]))
+    orch.repo.save(run)
+    with TestClient(app) as client:
+        r = client.get(f"/runs/{run.id}")
+    assert r.status_code == 200, r.text[:300]
+    strict_parse(r.text)
+    assert "accepted the risk for" in r.text and "accepted the code review's concerns for" in r.text

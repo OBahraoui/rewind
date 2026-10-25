@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import replace
 
 from rewind.models import (
@@ -137,8 +138,11 @@ class Rewind:
         return self.rewind(checkpoint_id, dry_run=True)
 
     def rewind(self, checkpoint_id: str, *, dry_run: bool = False, reason: str = "manual",
-               trigger: dict | None = None, code_scope: str = "") -> RewindReport:
-        """`code_scope`: revert only code the run changed up to this commit; keep later commits by others."""
+               trigger: dict | None = None, code_scope: str = "",
+               only: Callable[[Change], bool] | None = None) -> RewindReport:
+        """`code_scope`: revert only code the run changed up to this commit; keep later commits by others.
+        `only`: undo just the changes it accepts (e.g. a run's own); the rest is left alone, listed in the
+        report's trigger as `left_alone`, and not counted as drift."""
         cp = self.get_checkpoint(checkpoint_id)
         report = RewindReport(id=new_id("rw"), project_id=self.project_id, checkpoint_id=cp.id,
                               reason=reason, trigger={**(trigger or {}), **({"code_scope": code_scope}
@@ -150,7 +154,7 @@ class Rewind:
         started = time.monotonic()
 
         if dry_run:
-            report.change_set = self.diff(cp.id)
+            report.change_set = self._keep(report, self.diff(cp.id), only)
             for c in self.ordered(report.change_set.changes):
                 report.steps.append(self._planned(c))
             report.finished_at = utcnow()
@@ -162,7 +166,7 @@ class Rewind:
             report.pre_rewind_checkpoint_id = pre.id
             before = self.load_snapshot(cp.snapshot_id)
             now = self.load_snapshot(pre.snapshot_id)
-            report.change_set = diff(before, now, ctx.policy, cp.id)
+            report.change_set = self._keep(report, diff(before, now, ctx.policy, cp.id), only)
             self.save_report(report)  # visible as "in progress" immediately
 
             for change in self.ordered(report.change_set.changes):
@@ -175,12 +179,22 @@ class Rewind:
                 self.save_report(report)
 
             self._save_own()  # restore branches/MRs created during this rewind
-            report.verification = self.verify(ctx, before, report.change_set)
+            report.verification = self.verify(ctx, before, report.change_set,
+                                              left_alone=set(report.trigger.get("left_alone", [])))
             report.finished_at = utcnow()
             self.save_report(report)
         log.info("rewind finished", extra={"rewind": report.id, "zero_drift": report.zero_drift,
                                            "seconds": round(time.monotonic() - started, 2)})
         return report
+
+    @staticmethod
+    def _keep(report: RewindReport, change_set: ChangeSet, only: Callable[[Change], bool] | None) -> ChangeSet:
+        if only is None:
+            return change_set
+        left = [c.id for c in change_set.changes if not only(c)]
+        if left:
+            report.trigger["left_alone"] = left
+        return change_set.model_copy(update={"changes": [c for c in change_set.changes if only(c)]})
 
     def _planned(self, change: Change) -> StepResult:
         handler = HANDLERS[change.kind]
@@ -216,7 +230,8 @@ class Rewind:
                                        "duration_ms": step.duration_ms})
         return step
 
-    def verify(self, ctx: Context, checkpoint: Snapshot, planned: ChangeSet) -> Verification:
+    def verify(self, ctx: Context, checkpoint: Snapshot, planned: ChangeSet,
+               left_alone: set[str] | frozenset[str] = frozenset()) -> Verification:
         """Re-snapshot and prove every reversible change is back and every compensation is in place."""
         post = take_snapshot(ctx, self.project_id, "verify")
         self._save_snapshot(post)
@@ -224,6 +239,9 @@ class Rewind:
         planned_by_id = {c.id: c for c in planned.changes}
         drift, explained = [], []
         for change in residual.changes:
+            if change.id in left_alone:
+                explained.append(f"{change.summary} (not this run's; left alone)")
+                continue
             original = planned_by_id.get(change.id)
             if original and original.reversibility is Reversibility.IRREVERSIBLE:
                 explained.append(f"{change.summary} (irreversible, declared)")

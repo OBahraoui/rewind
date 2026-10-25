@@ -578,20 +578,59 @@ def test_a_review_fix_that_changes_nothing_stops_for_a_human_without_reviewing_a
 
 def test_a_human_can_accept_the_reviews_concerns_for_one_commit(orch, gl):
     mr, run = blocked_by_review_without_a_change(orch, gl)
-    reviews_before = sum(1 for c in gl.calls if c[0] == "start_workflow")
+    flows_before = sum(1 for c in gl.calls if c[0] == "start_workflow")
     run = orch.approve(run.id, by="Othmane", reason="Finance confirmed unlimited free orders for the sale")
-    # Gated again (same commit), pipeline already green, not reviewed again, merged once GitLab lets it through.
-    for _ in range(4):
-        if run.state is RunState.RELEASING:
-            break
+    assert any("Othmane accepted the code review's concerns for" in e.message for e in run.timeline)
+    for _ in range(3):
         run = orch.advance(run.id)
-    assert run.state is RunState.RELEASING, run.timeline[-1]
-    assert sum(1 for c in gl.calls if c[0] == "start_workflow") == reviews_before
-    assert any(c[0] == "update_merge_request" and c[2].get("reviewer_ids") == [0] for c in gl.calls)
+    # Not reviewed again; GitLab still blocks, so Rewind asks a person to Bypass, once, and waits.
+    assert run.state is RunState.MERGING and "select Bypass" in run.timeline[-1].message
+    assert sum(1 for c in gl.calls if c[0] == "start_workflow") == flows_before
     notes = [n["body"] for n in gl.mr_notes[mr]]
-    assert any("accepted the code review's open concerns" in b and "unassigned @GitLabDuo" in b for b in notes)
+    asks = [b for b in notes if "accepted the code review's open concerns" in b]
+    assert len(asks) == 1 and "**Bypass**" in asks[0] and "@" not in asks[0]  # a mention would summon the bot
     assert any("Please confirm" in b for b in notes)  # the review's comments stay
     assert run.approvals[-1].covers == [f"review|{run.gated_sha}"]
+    gl.bypass_requested_changes(mr)  # a person who can merge clicks Bypass in GitLab
+    run = orch.advance(run.id)
+    assert run.state is RunState.RELEASING, run.timeline[-1]
+
+
+def test_waiting_for_a_bypass_allows_an_hour_and_says_why_when_it_runs_out(orch, gl):
+    from datetime import timedelta
+
+    _, run = blocked_by_review_without_a_change(orch, gl)
+    run = orch.approve(run.id, by="Othmane", reason="accepted")
+    for _ in range(3):
+        run = orch.advance(run.id)
+    run.state_since -= timedelta(minutes=30)  # past the usual 10 minutes for merging
+    orch.repo.save(run)
+    run = orch.advance(run.id)
+    assert run.state is RunState.MERGING
+    run.state_since -= timedelta(minutes=31)
+    orch.repo.save(run)
+    run = orch.advance(run.id)
+    assert run.state is RunState.FAILED and "select Bypass" in run.error
+
+
+def test_a_run_that_timed_out_waiting_for_a_bypass_can_be_approved_again(orch, gl):
+    from datetime import timedelta
+
+    mr, run = blocked_by_review_without_a_change(orch, gl)
+    run = orch.approve(run.id, by="Othmane", reason="accepted")
+    for _ in range(3):
+        run = orch.advance(run.id)
+    run.state_since -= timedelta(minutes=61)
+    orch.repo.save(run)
+    run = orch.advance(run.id)
+    assert run.state is RunState.FAILED
+    run = orch.approve(run.id, by="Othmane", reason="accepted again")
+    for _ in range(3):
+        run = orch.advance(run.id)
+    assert run.state is RunState.MERGING
+    assert sum("accepted the code review's open concerns" in n["body"] for n in gl.mr_notes[mr]) == 2
+    gl.bypass_requested_changes(mr)
+    assert orch.advance(run.id).state is RunState.RELEASING
 
 
 def test_accepting_a_review_is_bound_to_its_commit(orch, gl):
@@ -610,3 +649,32 @@ def test_a_run_blocked_by_review_before_the_upgrade_can_still_be_accepted(orch, 
     orch.repo.save(run)
     run = orch.approve(run.id, by="Othmane", reason="accepted")
     assert run.approvals[-1].covers == [f"review|{run.gated_sha}"]
+
+
+def test_undoing_a_run_that_never_merged_leaves_other_peoples_work_alone(orch, gl, cr):
+    """A human ships to main and production after a blocked run's checkpoint; `/rewind` on that run must take back
+    only the agent's branch and merge request, never the human's commit or deploy."""
+    issue, run = blocked_run(orch, gl)
+    mr = run.mr_iid
+    gl.commit_files("main", {"README.md": "a human's change\n"})
+    human_rev = cr.deploy("production")
+    gl.members[42] = 30
+    reply = orch.command(text="/rewind", author_id=42, author="dev", issue_iid=issue)
+    assert "only its own changes were undone" in reply and "left alone" in reply, reply
+    run = orch.repo.get(run.id)
+    assert run.state is RunState.REWOUND
+    assert gl.tree("main")["README.md"] == "a human's change\n"          # the human's commit stays
+    assert cr.serving("production")["serving"] == [[human_rev, 100]]      # and so does their deploy
+    assert gl.mrs[mr]["state"] == "closed" and "agent/feature" not in gl.branches  # the agent's work is undone
+    report = orch.engine.get_report(run.rewind_id)
+    assert report.zero_drift and report.trigger["left_alone"]
+    assert any("left alone" in e for e in report.verification.explained)
+
+
+def test_the_block_message_quotes_the_reviewers_point_not_its_preamble():
+    from service.orchestrator import _gist
+
+    summary = "I left two comments. The first is a recommendation to check the 50% guardrail. I estimate little work."
+    assert _gist([summary]) == "The first is a recommendation to check the 50% guardrail."
+    assert _gist(["I left one comment.", "This flat discount lets the total fall below the guardrail."]) == \
+        "This flat discount lets the total fall below the guardrail."

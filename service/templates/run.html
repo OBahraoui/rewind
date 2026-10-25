@@ -49,6 +49,7 @@
         <header><h2 id="rw-h"><span class="h-ico">{{ m.icon("rewind", 16) }}</span>Rewind <span class="mono muted small">{{ report.id }}</span></h2>
           <span class="muted small">{{ report.reason }}</span></header>
         {% if run.error %}<p class="muted small" style="margin:-4px 0 14px">Before the rewind, the run had stopped: {{ run.error }}</p>{% endif %}
+        {% if report.trigger.get("left_alone") %}<p class="muted small" style="margin:-4px 0 14px">It never merged, so only its own changes were undone. {{ report.trigger["left_alone"] | length }} change(s) made by others since its checkpoint were left alone.</p>{% endif %}
         <div class="kpis">
           <div class="tile" style="padding:0"><span class="label">Production mitigated</span>
             <span class="value">{% if report.mitigated_after_s is not none %}{{ report.mitigated_after_s | duration }}{% else %}—{% endif %}</span>
@@ -201,7 +202,7 @@
       <section class="card card-pad" aria-labelledby="ap-h">
         <header><h3 id="ap-h">Human approvals</h3></header>
         <ul class="list">{% for a in run.approvals %}
-          <li><div class="grow"><b>{{ a.by }}</b> accepted {% if a.covers | select("match", "review[|]") | list %}the code review's concerns{% else %}the risk{% endif %} for <code>{{ a.sha[:8] }}</code><span class="by">{{ a.reason }} · {{ a.at.strftime('%d %b %H:%M') }} UTC</span></div></li>
+          <li><div class="grow"><b>{{ a.by }}</b> accepted {% if a.of_review %}the code review's concerns{% else %}the risk{% endif %} for <code>{{ a.sha[:8] }}</code><span class="by">{{ a.reason }} · {{ a.at.strftime('%d %b %H:%M') }} UTC</span></div></li>
         {% endfor %}</ul>
       </section>
       {% endif %}

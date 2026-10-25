@@ -70,6 +70,9 @@ for runtime in "$APP_SA" "${PROJECT_NUMBER}-compute@developer.gserviceaccount.co
 done
 gc storage buckets add-iam-policy-binding "gs://$BUCKET" --member "serviceAccount:$REWIND_SA" \
   --role roles/storage.objectAdmin >/dev/null
+# Cloud Run checks the caller can read the service's image on any update, a traffic change included.
+gc artifacts repositories add-iam-policy-binding "$REPO" --location "$REGION" --member "serviceAccount:$REWIND_SA" \
+  --role roles/artifactregistry.reader >/dev/null
 
 echo "→ IAM: a dedicated Cloud Build account (new projects' default compute account has no rights)"
 BUILD_BUCKET="gs://${GCP_PROJECT_ID}_cloudbuild"

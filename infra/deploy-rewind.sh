@@ -11,6 +11,7 @@ set -a; [ -f .env ] && . ./.env; set +a
 REGION="${GCP_REGION:-europe-west1}"
 SERVICE="${CLOUD_RUN_SERVICE_REWIND:-rewind}"
 TAG="$(git rev-parse --short HEAD 2>/dev/null || date +%s)"
+[ -n "$(git status --porcelain 2>/dev/null)" ] && TAG="${TAG}-dirty-$(date +%s)"  # never reuse a tag for new code
 IMAGE="${REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${GCP_ARTIFACT_REPO:-rewind}/rewind:${TAG}"
 RUNTIME_SA="${REWIND_SERVICE_ACCOUNT:-rewind-service@${GCP_PROJECT_ID}.iam.gserviceaccount.com}"
 BUILD_SA="${REWIND_BUILD_SERVICE_ACCOUNT:-rewind-builder@${GCP_PROJECT_ID}.iam.gserviceaccount.com}"
@@ -60,4 +61,19 @@ if [ -z "${REWIND_PUBLIC_URL:-}" ]; then
   gc run services update "$SERVICE" --region "$REGION" --update-env-vars "REWIND_PUBLIC_URL=${URL}" >/dev/null
   echo "REWIND_PUBLIC_URL=${URL}   ← add this to .env, then run: rewind bootstrap (registers the webhook)"
 fi
+echo "→ smoke test: every page, every run, on the live service"
+python3 - "$URL" <<'PY'
+import json, sys, urllib.error, urllib.request
+url = sys.argv[1].rstrip("/")
+paths = ["/", "/policy", "/health"] + [f"/runs/{r['id']}" for r in json.load(urllib.request.urlopen(url + "/api/runs"))]
+bad = []
+for path in paths:
+    try:
+        urllib.request.urlopen(url + path, timeout=30)
+    except urllib.error.HTTPError as exc:
+        bad.append(f"{path} -> {exc.code}")
+if bad:
+    sys.exit("✗ pages failing on the live service:\n  " + "\n  ".join(bad))
+print(f"  {len(paths)} pages OK")
+PY
 echo "✓ Rewind is live at ${URL}"

@@ -67,6 +67,15 @@ GUARDED = {RunState.PLANNING, RunState.DEVELOPING, RunState.GATING, RunState.RER
            RunState.FIXING, RunState.REVIEWING, RunState.MERGING, RunState.RELEASING}
 
 # Duo's developer flow opens merge requests as drafts, and GitLab refuses to merge a draft.
+def _gist(comments: list[str]) -> str:
+    """The reviewer's first real point: skips preambles like "I left two comments." and effort estimates."""
+    for body in comments:
+        for sentence in re.split(r"(?<=[.!?])\s+", " ".join(body.split())):
+            if sentence and not re.match(r"(?i)^(I (have )?left|I estimate|Overall|Thanks)\b", sentence):
+                return sentence
+    return ""
+
+
 DRAFT_PREFIX = re.compile(r"^(\s*(\[draft\]|\(draft\)|draft:)\s*)+", re.IGNORECASE)  # "Draft: Draft: x" too
 # Why GitLab won't merge yet, in words, for the run's timeline and its timeout message.
 MERGE_WAITS = {"not_approved": "it needs approval from a human reviewer",
@@ -77,7 +86,7 @@ MERGE_WAITS = {"not_approved": "it needs approval from a human reviewer",
                "status_checks_must_pass": "external status checks haven't passed",
                "ci_must_pass": "its pipeline must pass", "ci_still_running": "its pipeline is still running",
                "checking": "GitLab is still checking it", "unchecked": "GitLab is still checking it",
-               "requested_changes": "the code review's requested changes still block it"}
+               "requested_changes": "someone who can merge must select Bypass next to the change request"}
 
 # Pipeline stage -> DevSecOps lifecycle stage, for evidence links.
 STAGE_MAP = {"verify": "verify", "package": "package", "secure": "secure", "test": "secure",
@@ -90,6 +99,8 @@ STEP_LABEL = {"plan": "planner flow", "develop": "developer flow", "review": "co
 UNATTRIBUTED = {"cloud_run": "release pipeline", "feature_flag": "release pipeline (configure)",
                 "release": "release pipeline", "tag": "release pipeline", "repository": "Rewind's gated merge",
                 "issue": "Rewind's gated merge (Closes #)", "branch": "Rewind's gated merge"}
+
+BYPASS_WAIT = timedelta(minutes=60)
 
 LABELS = {
     "running": "rewind:running", "shipped": "rewind:shipped", "rewound": "rewind:rewound",
@@ -192,6 +203,8 @@ class Orchestrator:
     def _step(self, run: Run) -> None:
         handler = getattr(self, f"_on_{run.state.value}")
         timeout = TIMEOUTS.get(run.state)
+        if run.state == RunState.MERGING and run.extra.get("bypass_asked") == run.gated_sha:
+            timeout = BYPASS_WAIT  # a person was asked to act in GitLab
         if timeout and utcnow() - run.state_since > timeout:
             self._on_timeout(run)
             return
@@ -527,7 +540,7 @@ class Orchestrator:
         if merge_status == "requested_changes":
             accepted = self._review_accepted(run, mr["sha"])
             if accepted:
-                self._lift_review_block(run, mr, accepted)
+                self._await_bypass(run, mr, accepted)
             else:
                 self._address_review(run, mr)
             return
@@ -575,7 +588,7 @@ class Orchestrator:
     def _review_needs_human(self, run: Run, why: str, comments: list[str] | None = None) -> None:
         """Stop for a human, in the reviewer's words. Only an authenticated approval can accept its concerns."""
         comments = self._review_comments(run) if comments is None else comments
-        said = re.split(r"(?<=[.!?])\s", " ".join(comments[0].split()), maxsplit=1)[0] if comments else ""
+        said = _gist(comments)
         run.extra["blocked_by"] = "review"
         self._label(run, add=["rewind:needs-human"])
         self._block(run, why + (f": {said}" if said else "") + " A human can accept its concerns for this commit "
@@ -584,27 +597,16 @@ class Orchestrator:
     def _review_accepted(self, run: Run, sha: str) -> Approval | None:
         return run.approval_for(sha, {f"review|{sha}"}) if sha else None
 
-    def _lift_review_block(self, run: Run, mr: dict, approval: Approval) -> None:
-        """A named human accepted the review's concerns for this commit: unassign the reviewer who requested
-        changes (their comments stay), so GitLab lets the merge through. Done once; if GitLab still blocks it,
-        the run says so."""
-        if run.extra.get("review_unassigned") == mr["sha"]:
-            if run.extra.get("merge_waiting") != "requested_changes":
-                run.extra["merge_waiting"] = "requested_changes"
-                run.note(f"waiting to merge: {MERGE_WAITS['requested_changes']}")
+    def _await_bypass(self, run: Run, mr: dict, approval: Approval) -> None:
+        """A named human accepted the review's concerns for this commit. GitLab lifts requested changes only when
+        the reviewer re-reviews or a person who can merge selects Bypass on the merge request, and Rewind doesn't
+        override a review itself: it asks once, then merges as soon as the block is gone."""
+        if run.extra.get("bypass_asked") == mr["sha"]:
             return
-        reviewers = self.gitlab.merge_request_reviewers(run.mr_iid)
-        blocking = [r["user"] for r in reviewers if r.get("state") == "requested_changes"]
-        keep = [r["user"]["id"] for r in reviewers if r.get("state") != "requested_changes"]
-        self.gitlab.update_merge_request(run.mr_iid, reviewer_ids=keep or [0])
-        run.extra["review_unassigned"] = mr["sha"]
-        names = ", ".join(f"@{u['username']}" for u in blocking) or "the reviewer"
-        run.note(f"{approval.by} accepted the code review's concerns for {mr['sha'][:8]}; unassigned {names} so "
-                 f"the merge can go ahead")
-        self.gitlab.create_mr_note(run.mr_iid, f"⏪ **{approval.by}** accepted the code review's open concerns for "
-                                               f"commit `{mr['sha'][:8]}` only: {approval.reason}\n\nRewind "
-                                               f"unassigned {names} as reviewer so the merge can go ahead. The "
-                                               f"review's comments stay on this merge request.")
+        run.extra["bypass_asked"] = mr["sha"]
+        run.extra["merge_waiting"] = "requested_changes"
+        run.note(f"{approval.by} accepted the code review's concerns for {mr['sha'][:8]}; waiting for someone who "
+                 f"can merge to select Bypass next to the change request on MR !{run.mr_iid}")
 
     def _review_comments(self, run: Run) -> list[str]:
         """What the reviewer wrote during the latest review, oldest first (Rewind's own notes left out)."""
@@ -720,21 +722,26 @@ class Orchestrator:
         return True
 
     # -- provenance ------------------------------------------------------------
+    def _sessions(self, run: Run) -> dict[str, list[list[str]]]:
+        """change id -> the agent sessions that made it, from the checkpoints taken after each step."""
+        prev = self.engine.load_snapshot(self.engine.get_checkpoint(run.checkpoint_id).snapshot_id)
+        seen: dict[str, list[list[str]]] = {}
+        for flow in run.flows:
+            if not flow.checkpoint_id:
+                continue
+            snap = self.engine.load_snapshot(self.engine.get_checkpoint(flow.checkpoint_id).snapshot_id)
+            label = f"{STEP_LABEL.get(flow.step, flow.step)} #{flow.workflow_id}"
+            for c in diff_snapshots(prev, snap, self.policy).changes:
+                entry = [label, flow.web_url]
+                if entry not in seen.setdefault(c.id, []):
+                    seen[c.id].append(entry)
+            prev = snap
+        return seen
+
     def _attribute(self, run: Run, change_set: ChangeSet) -> None:
         """Link every change to the agent session that made it, using the step checkpoints."""
         try:
-            prev = self.engine.load_snapshot(self.engine.get_checkpoint(run.checkpoint_id).snapshot_id)
-            seen: dict[str, list[list[str]]] = {}
-            for flow in run.flows:
-                if not flow.checkpoint_id:
-                    continue
-                snap = self.engine.load_snapshot(self.engine.get_checkpoint(flow.checkpoint_id).snapshot_id)
-                label = f"{STEP_LABEL.get(flow.step, flow.step)} #{flow.workflow_id}"
-                for c in diff_snapshots(prev, snap, self.policy).changes:
-                    entry = [label, flow.web_url]
-                    if entry not in seen.setdefault(c.id, []):
-                        seen[c.id].append(entry)
-                prev = snap
+            seen = self._sessions(run)
             run.provenance = {c.id: seen.get(c.id) or [[UNATTRIBUTED.get(c.kind, "outside agent sessions"), ""]]
                               for c in change_set.changes}
         except Exception:
@@ -750,9 +757,16 @@ class Orchestrator:
             self._publish(run)
         self._cancel_release(run)
         # Revert only the code this run merged; a commit an agent pushed around the gate is reverted too.
-        scope = "" if (trigger or {}).get("ungated_commits") else run.merge_sha
+        ungated = bool((trigger or {}).get("ungated_commits"))
+        scope = "" if ungated else run.merge_sha
+        only = None
+        if not run.merge_sha and not ungated:
+            # Never merged: nothing of this run reached the default branch or production. Undo only what its own
+            # agent sessions changed (its branch, its merge request), never other people's work since the checkpoint.
+            own = set(self._sessions(run))
+            only = lambda c: c.id in own  # noqa: E731
         report = self.engine.rewind(run.checkpoint_id, reason=reason, trigger={"run": run.id, **(trigger or {})},
-                                    code_scope=scope)
+                                    code_scope=scope, only=only)
         run.rewind_id = report.id
         run.extra["rewind_summary"] = views.rewind_summary(report)  # for the dashboard's one-read index
         if report.change_set:
@@ -896,8 +910,11 @@ class Orchestrator:
         report = self.engine.get_report(run.rewind_id)
         verdict = "zero drift ✅" if report.zero_drift else "drift found ⚠️ (see the ledger)"
         mitigated = f" Production mitigated in {report.mitigated_after_s:.1f}s." if report.mitigated_after_s else ""
+        left = len(report.trigger.get("left_alone", []))
+        kept = (f" It never merged, so only its own changes were undone; {left} change(s) made by others since its "
+                f"checkpoint were left alone." if left else "")
         return (f"⏪ Rewound run `{run.id}` to checkpoint `{run.checkpoint_id}` as requested by @{author}."
-                f"{mitigated} Verification: {verdict}. Undo with `rewind undo-last`.")
+                f"{mitigated}{kept} Verification: {verdict}. Undo with `rewind undo-last`.")
 
     def stop(self, run_id: str, *, by: str) -> Run:
         """A human halts a run. Stopping only removes autonomy, so it needs no special trust."""
@@ -928,23 +945,29 @@ class Orchestrator:
             run = self.repo.get(run_id)
             if run is None:
                 raise LookupError(run_id)
-            if run.state != RunState.BLOCKED or not run.mr_iid:
+            waited = run.state == RunState.FAILED and run.extra.get("merge_waiting") == "requested_changes"
+            if (run.state != RunState.BLOCKED and not waited) or not run.mr_iid:
                 raise ValueError(f"run is {run.state.value}; only a blocked run with a merge request can be approved")
             mr = self.gitlab.get_merge_request(run.mr_iid)
             if not mr or mr["state"] != "opened":
                 raise ValueError(f"MR !{run.mr_iid} is not open")
             covers = gate_fingerprints(run.gate) | security_fingerprints(run.security_findings)
             # (runs blocked before blocked_by was recorded say so in their error)
-            review = run.extra.pop("blocked_by", "") == "review" or "code review" in (run.error or "")
+            review = run.extra.pop("blocked_by", "") == "review" or "code review" in (run.error or "") or waited
             if review:
                 covers.add(f"review|{mr['sha']}")
             run.approvals.append(Approval(by=by, reason=reason.strip(), sha=mr["sha"], covers=sorted(covers)))
             run.error = None
-            self._label(run, add=[LABELS["running"]], remove=[LABELS["blocked"]])
-            run.move(RunState.GATING, f"{by} accepted the risk for {mr['sha'][:8]}: {reason.strip()}")
+            run.extra.pop("bypass_asked", None)  # ask again for this approval
+            self._label(run, add=[LABELS["running"]], remove=[LABELS["blocked"], LABELS["failed"]])
+            accepted = "the code review's concerns" if review else "the risk"
+            run.move(RunState.GATING, f"{by} accepted {accepted} for {mr['sha'][:8]}: {reason.strip()}")
             what = "the code review's open concerns" if review else "what Rewind can't undo in this change"
+            then = ("\n\nGitLab keeps the merge blocked until someone who can merge selects **Bypass** next to the "
+                    "change request in this merge request's Overview. Rewind merges the gated commit as soon as "
+                    "it's clear. The review's comments stay here." if review else "")
             self.gitlab.create_mr_note(run.mr_iid, f"⏪ **{by}** accepted {what}, for commit `{mr['sha'][:8]}` only: "
-                                                   f"{reason.strip()}")
+                                                   f"{reason.strip()}{then}")
             self.repo.save(run)
             self._publish(run)
         self.advance(run_id)
