@@ -4,7 +4,7 @@
 <div class="stack" {% if ov.active %}data-live="/api/version" data-version="{{ version }}" data-interval="5000"{% endif %}>
   <section class="hero hero-center">
     <h1>Agents ship to production.<br>Rewind keeps every change undoable.</h1>
-    <p class="lede">Ctrl+Z for autonomous software delivery on GitLab. Every agent run is checkpointed, gated by
+    <p class="lede"><span class="undo-keys" aria-label="Ctrl+Z"><kbd>Ctrl</kbd><span aria-hidden="true">+</span><kbd>Z</kbd></span> for autonomous software delivery on GitLab. Every agent run is checkpointed, gated by
       reversibility before merge, and undone as one change set if production regresses, then checked against the
       checkpoint for zero drift.</p>
     <div class="cta">
