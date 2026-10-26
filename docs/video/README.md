@@ -35,9 +35,34 @@ as [ElevenLabs](https://elevenlabs.io).
 
 ### A. The live run (scenes 3 and 4): one recording, about 20 minutes
 
-In the terminal (not recorded): `python scripts/demo.py rewind --no-label`. It prints the new issue's link.
+**Two screens help.** Film the main screen (Chrome, full screen). On the other one, keep the terminal and this repo
+folder: you watch the run there and nobody sees it. With only the MacBook screen, watch the run on the dashboard tab
+itself (it updates on its own) and keep the terminal closed while recording.
 
-Start recording, then:
+In the terminal (not recorded):
+
+```bash
+python scripts/demo.py rewind --no-label   # prints the new issue: "#16 Weekend flash sale…" and its link
+make watch RUN=16                          # use the number it printed: follows the run line by line
+```
+
+Paste the issue link into tab 1. **Cmd + Shift + 5 → Record Entire Screen → click the main screen.**
+
+**Why add the label by hand on camera:** the label is the hand-off, the one thing a person does. Showing it makes the
+point that nothing else is touched afterwards. Then keep your hands off: only switch tabs.
+
+| When the run says | Do | You'll see |
+|---|---|---|
+| (start) | Tab 1: Labels → Edit → `rewind:auto` → click outside | the label lands; Rewind's ledger comment appears within seconds |
+| Queued / Planning | **Cmd + 2**, click the run in the "in progress" card | the track starts filling in, live |
+| Developing → Gating → Verifying → In review | stay on the run page (8–10 minutes) | stations tick over; nothing to click |
+| Fixing → Merging | **Cmd + 3**, open the MR, **Cmd + R**, scroll to Duo's review and Rewind's policy note, hold 5 s, **Cmd + 2** | "requested changes", then "…by Rewind's policy it ships" |
+| Releasing | **Cmd + 4**, the storefront. Don't touch anything | strip "watching" → prices go red → strip "undoing" → "Prices recovered" |
+| Rewound | **Cmd + 2**, the run page (Cmd + R if needed), scroll slowly; click "Incident #…" | the arc, "Production mitigated", zero drift; the incident closed |
+
+Don't speed anything up while recording. Speed is added in the editor.
+
+Then:
 
 1. **Tab 1**, open the new issue. Add the label `rewind:auto` (Labels → rewind:auto). Hold 3 seconds.
 2. **Tab 2**, open the run (the newest on the overview). Leave it on screen: the track fills in by itself.
@@ -63,6 +88,9 @@ Start recording, then:
 One recording with pauses between clips is fine: you'll cut them apart in the editor.
 
 ## 3. The voiceover
+
+Use **narration.txt** (plain text), not narration.md (that one is the table with scenes). First change "17 seconds"
+in scene 4 to your run's "Production mitigated" time, rounded.
 
 1. On elevenlabs.io: Text to Speech → paste [narration.txt](narration.txt) → choose a calm voice →
    settings: Stability about 50%, Similarity about 75% → Generate → listen → Download (MP3).

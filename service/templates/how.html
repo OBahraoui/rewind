@@ -2,8 +2,8 @@
 {% block title %}How it works · Rewind{% endblock %}
 {% block description %}How Rewind lets GitLab Duo agents ship anything it can undo, stops what it can't, and takes a release back when production regresses.{% endblock %}
 {% block content %}
-<div class="stack">
-  <section class="hero">
+<div class="stack reading">
+  <section class="hero hero-center">
     <h1>How Rewind works</h1>
     <p class="lede">Rewind runs beside GitLab Duo's agents. It doesn't need them to be perfect: it makes what they do
       undoable, stops what can't be undone, and takes everything back when production says no.</p>
@@ -34,7 +34,7 @@
         flags within seconds, then code, merge request and issue. It compares the project with the checkpoint again
         and closes its own incident when there's zero drift.</li>
     </ol>
-    {% if example %}<p class="small" style="margin-top:12px"><a href="/runs/{{ example.id }}">See a real one: #{{ example.issue_iid }} {{ example.issue_title }}, production back in {{ example.rewind.mitigated_after_s | duration }}</a></p>{% endif %}
+    {% if example %}<p class="small links" style="margin-top:14px"><a href="/runs/{{ example.id }}">See a real one: #{{ example.issue_iid }} {{ example.issue_title }}, production back in {{ example.rewind.mitigated_after_s | duration }}</a></p>{% endif %}
   </section>
 
   <section aria-labelledby="classes-h">
@@ -65,7 +65,7 @@
       <li>Data a migration destroyed with no way back. Migrations without a downgrade are blocked.</li>
       <li>A CI/CD variable's old value. Rewind stores only a fingerprint, never the secret, so changing one is gated.</li>
     </ul>
-    <p class="small" style="margin-top:14px"><a href="/connect">Connect your project</a> · <a href="/policy">Read the policy in force</a></p>
+    <p class="small links" style="margin-top:16px"><a href="/connect">Connect your project</a> · <a href="/policy">Read the policy in force</a></p>
   </section>
 </div>
 {% endblock %}

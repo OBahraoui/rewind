@@ -241,8 +241,7 @@ section > header { display: flex; align-items: baseline; justify-content: space-
 .station.regressed .node { background: var(--critical); border-color: var(--critical); color: #fff;
   box-shadow: 0 0 0 5px var(--critical-tint); }
 .station.regressed .name { color: var(--ink); }
-.track.rolled .progress { background: repeating-linear-gradient(90deg, color-mix(in srgb, var(--accent) 50%, transparent) 0 6px,
-  var(--surface) 6px 10px); }
+.track.rolled .progress { height: 0; background: none; border-top: 2px dashed color-mix(in srgb, var(--accent) 55%, var(--line-strong)); }
 .station.outcome .node { width: 28px; height: 28px; margin-top: -2px; }
 .station.outcome.tone-good .node { background: var(--good); border-color: var(--good); color: #fff; }
 .station.outcome.tone-accent .node { background: var(--accent); border-color: var(--accent); color: var(--on-accent);
@@ -376,6 +375,19 @@ details.disclosure[open] > summary::before { transform: rotate(90deg); }
 .events time { font-family: var(--mono); font-size: .78rem; color: var(--ink-3); display: block; }
 
 /* -- how it works and connect ---------------------------------------------- */
+/* A centred reading column; the diagram may use the full width. */
+.reading > * { max-width: 680px; margin-left: auto; margin-right: auto; }
+.reading p, .reading li, .reading dd { font-size: 1rem; }
+.reading .small, .reading .by, .reading .rule p { font-size: .9rem; }
+.reading .card-pad > p { max-width: 66ch; }
+.reading > .hero { max-width: 880px; }
+.reading > .diagram { max-width: none; }
+.reading > section > header { flex-direction: column; align-items: center; text-align: center; gap: 2px; margin-bottom: 16px; }
+.reading > .card > header { align-items: flex-start; text-align: left; flex-direction: row; justify-content: space-between; }
+.reading .steps, .reading ul.plain { max-width: none; }
+.reading .rules { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 720px) { .reading .rules { grid-template-columns: minmax(0, 1fr); } }
+.reading .links { text-align: center; }
 .diagram { margin: 0; }
 .diagram svg { display: block; width: 100%; height: auto; border-radius: var(--radius-sm); }
 .diagram figcaption { margin-top: 10px; }
