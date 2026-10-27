@@ -44,3 +44,18 @@ def test_storefront_page(client):
 def test_health_says_where_rewind_is(client, monkeypatch):
     monkeypatch.setenv("REWIND_URL", "https://rewind.example/")
     assert client.get("/health").json()["rewind_url"] == "https://rewind.example"
+
+
+def test_flash_sale_typical_order(client):
+    flags.override("new_pricing", True)
+    r = client.post("/orders/quote", json={"items": [{"sku": "mug", "quantity": 1}, {"sku": "beans", "quantity": 1}]})
+    assert r.json()["subtotal_cents"] == 3000
+    assert r.json()["total_cents"] == 1500
+    assert r.json()["pricing"] == "new"
+
+
+def test_flash_sale_small_order_is_free(client):
+    flags.override("new_pricing", True)
+    r = client.post("/orders/quote", json={"items": [{"sku": "tea", "quantity": 1}]})
+    assert r.json()["subtotal_cents"] == 400
+    assert r.json()["total_cents"] == 0
