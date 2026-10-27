@@ -3,7 +3,7 @@
 # Rewind snapshots the live flags, so a rewind switches them back.
 new_pricing:
   staging: true
-  production: true
+  production: false
 order_receipts:
   staging: true
   production: false
