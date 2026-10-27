@@ -1,6 +1,6 @@
-# Demo video script (2:50)
+# Demo video script (2:22)
 
-The production kit (narration timed per scene, cards, labels, presenter, subtitles, how to record and edit) is in [docs/video/](video/README.md). This page is the outline.
+This page is the outline of the demo video.
 
 One memorable moment: **production breaks, and the agent's entire change set disappears in seconds.**
 Record real runs only. Speed up waiting time; never fake a result. Narrate (AI voice is fine).

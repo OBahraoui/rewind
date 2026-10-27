@@ -7,12 +7,12 @@ Agents ship anything Rewind can undo. If production regresses, the agent's whole
 verified with zero drift.</p>
 
 <p align="center">
+  <a href="https://www.youtube.com/watch?v=zsihiVEGoao"><b>Demo video (2:22)</b></a> ·
   <a href="https://rewind-twegh4u3wa-ew.a.run.app"><b>Live dashboard</b></a> ·
   <a href="https://rewind-demo-production-twegh4u3wa-ew.a.run.app">Demo storefront</a> ·
   <a href="https://rewind-twegh4u3wa-ew.a.run.app/policy">Reversibility policy</a> ·
   <a href="#how-the-hands-off-loop-works">How it works</a> ·
   <a href="LICENSE">MIT license</a>
-  <!-- DEMO-VIDEO: add " · <a href="https://youtu.be/...">Demo video</a>" here before submitting -->
 </p>
 
 <p align="center"><img src="docs/readme/rewound-run.png" width="880"
@@ -223,11 +223,11 @@ tighter developer flow). Then re-run `./infra/deploy-rewind.sh`.
 ## Try it
 
 ```bash
-python scripts/demo.py ship      # bulk discount → ships to production hands-off
-python scripts/demo.py review    # "$15 off every order" → Duo review requests changes → the agent fixes them → ships
-python scripts/demo.py rewind    # weekend flash sale the business signed off → production monitoring fails → rewound
-python scripts/demo.py block     # "send the receipt within the request" → the agent stops and asks (or the gate blocks)
-python scripts/demo.py outbox    # "email a receipt" → the agent queues it in an outbox → undoable, so it ships
+.venv/bin/python scripts/demo.py ship      # bulk discount → ships to production hands-off
+.venv/bin/python scripts/demo.py review    # "$15 off every order" → Duo review requests changes → the agent fixes them → ships
+.venv/bin/python scripts/demo.py rewind    # weekend flash sale the business signed off → production monitoring fails → rewound
+.venv/bin/python scripts/demo.py block     # "send the receipt within the request" → the agent stops and asks (or the gate blocks)
+.venv/bin/python scripts/demo.py outbox    # "email a receipt" → the agent queues it in an outbox → undoable, so it ships
 ```
 
 Watch the ledger fill in on the issue, or open the dashboard at `REWIND_PUBLIC_URL`. The demo app's storefront (its production URL) shows what production charges for sample baskets, live. During the flash sale a $4 tea is charged **$0.00**, below the margin guardrail production monitoring enforces; after the rewind it's back to $4.00, and the page says how long prices were broken.

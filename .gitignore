@@ -27,5 +27,9 @@ Rewind — Build Plan*.pdf
 .cursor/
 .impeccable/
 
-# Rendered video files (large): make them with scripts/video/
-docs/video/build/
+
+# demo video production kit and its files: kept locally, not part of Rewind
+docs/video/
+scripts/video/
+voiceover*.mp3
+voiceover*.aiff

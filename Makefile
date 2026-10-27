@@ -36,6 +36,9 @@ doctor: ## Check configuration and access
 demo-rewind: ## Open the flash-sale issue and follow the run (production breaks, Rewind restores it)
 	$(PY) scripts/demo.py rewind --watch
 
+demo-film: ## Like demo-rewind, but you add the rewind:auto label yourself (for filming); prints the issue to watch
+	$(PY) scripts/demo.py rewind --no-label
+
 demo-review: ## Open the launch-promo issue and follow the run (Duo review requests changes, the agent fixes them)
 	$(PY) scripts/demo.py review --watch
 
@@ -57,16 +60,10 @@ watch: ## Follow a run: make watch RUN=<run id or issue number>
 ship: ## Check, sync with GitLab, push and redeploy (refuses while a run is in progress)
 	./scripts/ship.sh
 
-video-presenter: ## The animated Rewind presenter for the video, from a voiceover: make video-presenter AUDIO=voice.mp3
-	$(PY) scripts/video/presenter.py --audio "$(AUDIO)"
-
-video-subtitles: ## Subtitles timed to the voiceover: make video-subtitles AUDIO=voice.mp3
-	$(PY) scripts/video/subtitles.py --audio "$(AUDIO)"
-
 release: ## Tag and publish the submitted version (after the video link is in the README): make release VERSION=1.0.0
 	set -a; . ./.env; set +a; $(PY) scripts/release.py --version $${VERSION:-1.0.0}
 
 deploy: ## Redeploy the Rewind service only
 	CLOUDSDK_ACTIVE_CONFIG_NAME=rewind ./infra/deploy-rewind.sh
 
-.PHONY: help setup check property integration simulate screenshots readme-images design-check doctor demo-rewind demo-review demo-ship demo-block rerun stop-all watch ship video-presenter video-subtitles release deploy
+.PHONY: help setup check property integration simulate screenshots readme-images design-check doctor demo-rewind demo-film demo-review demo-ship demo-block rerun stop-all watch ship release deploy
