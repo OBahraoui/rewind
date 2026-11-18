@@ -8,12 +8,17 @@ verified with zero drift.</p>
 
 <p align="center">
   <a href="https://www.youtube.com/watch?v=zsihiVEGoao"><b>Demo video (2:22)</b></a> ·
-  <a href="https://rewind-twegh4u3wa-ew.a.run.app"><b>Live dashboard</b></a> ·
-  <a href="https://rewind-demo-production-twegh4u3wa-ew.a.run.app">Demo storefront</a> ·
-  <a href="https://rewind-twegh4u3wa-ew.a.run.app/policy">Reversibility policy</a> ·
+  <a href="https://obahraoui.github.io/rewind/"><b>Dashboard (archived)</b></a> ·
+  <a href="https://obahraoui.github.io/rewind/policy/">Reversibility policy</a> ·
   <a href="#how-the-hands-off-loop-works">How it works</a> ·
   <a href="LICENSE">MIT license</a>
 </p>
+
+<p align="center"><sub>Built for the GitLab "Life After Code" hackathon (October 2026) on the GitLab Duo Agent Platform and
+Google Cloud Run; original repository on
+<a href="https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43319182/showcase">GitLab</a>. The live deployment
+has been retired: the dashboard above is a static copy of it, real runs included. Everything also runs offline with
+<code>make setup && make simulate</code>.</sub></p>
 
 <p align="center"><img src="docs/readme/rewound-run.png" width="880"
   alt="A rewound run: the release regressed, everything after the checkpoint was rolled back, and Rewind verified zero drift"></p>
