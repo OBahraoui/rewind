@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reversibility policy · Rewind</title>
+<meta name="description" content="What Rewind lets agents do hands-off, what it neutralises, and what it stops.">
+<meta name="theme-color" content="#5040d6">
+<script>try{var t=localStorage.getItem("rewind-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;display=swap">
+<link rel="stylesheet" href="../static/style.css">
+<link rel="icon" type="image/svg+xml" href="../static/icon.svg">
+<script src="../static/app.js" defer></script>
+
+</head>
+<body><div style="background:#5040d6;color:#fff;text-align:center;padding:8px 16px;font:500 14px/1.4 system-ui,sans-serif">Archived copy of the Rewind dashboard as it ran on Google Cloud Run during the GitLab hackathon (Oct–Nov 2026). Read-only: the live service has been retired. <a style="color:#fff;text-decoration:underline" href="https://www.youtube.com/watch?v=zsihiVEGoao">Watch the demo</a></div>
+<a class="skip" href="#main">Skip to content</a>
+<p class="sr-only" id="live-announce" aria-live="polite"></p>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="../index.html" aria-label="Rewind home"><svg class="mark" width="26" height="26" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+  <circle cx="7" cy="24" r="5" fill="var(--accent)"/>
+  <path d="M27 8 14 24l13 16h7L21 24 34 8z" fill="var(--accent)"/>
+  <path d="M41 8 28 24l13 16h7L35 24 48 8z" fill="var(--accent)" opacity=".5"/>
+</svg><span>Rewind</span></a>
+    <a class="crumb" href="https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43319182/showcase" title="gitlab-ai-hackathon/transcend-october-2026/43319182/showcase on GitLab">showcase<svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14 5h5v5M19 5l-8 8"/><path d="M18 14v4a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h4"/></svg></a>
+    <nav class="nav" aria-label="Main">
+      <a href="../index.html" >Runs</a>
+      <a href="../how/index.html" >How it works</a>
+      <a href="../connect/index.html" >Connect</a>
+      <a href="index.html" aria-current="page">Policy</a>
+      <a class="hide-sm" href="/api/docs">API</a>
+      <button class="icon-btn theme" type="button" data-theme-toggle aria-label="Change theme">
+        <svg class="t-system" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"/></svg>
+        <svg class="t-light" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></svg>
+        <svg class="t-dark" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>
+      </button>
+    </nav>
+  </div>
+</header>
+<main id="main">
+
+<div class="stack">
+  <section class="hero">
+    <h1>Reversibility policy</h1>
+    <p class="lede">Autonomy is set by reversibility, not by a fixed approval level. This is the policy in force for this
+      project, read live from <code>rewind/policy.yaml</code>. Agents may not edit it: it is a protected path.</p>
+  </section>
+
+  <section aria-labelledby="classes-h">
+    <header><h2 id="classes-h">How every change is classified</h2><span class="muted small">first matching rule wins · unknown changes fail closed</span></header>
+    <div class="rules">
+      
+      <div class="card rule">
+        <header style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><span class="badge tone-good "><span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></span>Reversible</span><span class="muted small">Rewind restores these exactly.</span></header>
+        <ul class="list">
+          
+          <li><div class="grow"><span class="k">cloud_run · updated</span><p>Traffic is pinned back to the checkpoint revision; Cloud Run keeps old revisions, so this takes seconds.</p></div></li>
+          
+          <li><div class="grow"><span class="k">feature_flag</span><p>Flag state and strategies are restored exactly.</p></div></li>
+          
+          <li><div class="grow"><span class="k">label</span><p>Project labels are recreated or removed exactly; memberships are restored on each issue and MR.</p></div></li>
+          
+          <li><div class="grow"><span class="k">branch</span><p>Unprotected branches are deleted or recreated at their checkpoint commit.</p></div></li>
+          
+          <li><div class="grow"><span class="k">tag · deleted</span><p>The tag is recreated on the same commit.</p></div></li>
+          
+          <li><div class="grow"><span class="k">release · updated</span><p>Release name and notes are restored.</p></div></li>
+          
+          <li><div class="grow"><span class="k">merge_request · updated</span><p>State, title, labels and draft status are restored.</p></div></li>
+          
+          <li><div class="grow"><span class="k">issue · updated</span><p>State, title, labels and assignees are restored.</p></div></li>
+          
+          <li><div class="grow"><span class="k">ci_variable · created</span><p>The new variable is deleted.</p></div></li>
+          
+          <li><div class="grow"><span class="k">ci_variable · updated</span><p>Variable settings (protected, masked, raw, type) are restored.</p></div></li>
+          
+        </ul>
+      </div>
+      
+      <div class="card rule">
+        <header style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><span class="badge tone-warning "><span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 8h15M15 4l4 4-4 4"/><path d="M20 16H5M9 12l-4 4 4 4"/></svg></span>Compensatable</span><span class="muted small">Neutralised by a new, recorded action; history is kept.</span></header>
+        <ul class="list">
+          
+          <li><div class="grow"><span class="k">repository · updated</span><p>A restore commit returns the default branch tree to the checkpoint; the agent&#39;s commits stay in history for audit.</p></div></li>
+          
+          <li><div class="grow"><span class="k">tag</span><p>The tag is removed; anyone who already fetched it keeps a copy.</p></div></li>
+          
+          <li><div class="grow"><span class="k">release</span><p>The release is removed or recreated; notifications already sent cannot be recalled.</p></div></li>
+          
+          <li><div class="grow"><span class="k">merge_request · when state = merged</span><p>A merge cannot be un-merged: the code is restored by the repository restore and the MR is annotated.</p></div></li>
+          
+          <li><div class="grow"><span class="k">merge_request · created</span><p>The MR is closed with a note instead of deleted, so the record stays.</p></div></li>
+          
+          <li><div class="grow"><span class="k">issue · created</span><p>The issue is closed with a note instead of deleted, so the record stays.</p></div></li>
+          
+        </ul>
+      </div>
+      
+      <div class="card rule">
+        <header style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><span class="badge tone-critical "><span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="M6 18L18 6"/></svg></span>Irreversible</span><span class="muted small">Cannot be undone, so the gate stops them.</span></header>
+        <ul class="list">
+          
+          <li><div class="grow"><span class="k">cloud_run</span><p>A Cloud Run service appearing or disappearing is outside Rewind&#39;s inverse set.</p></div></li>
+          
+          <li><div class="grow"><span class="k">repository</span><p>The default branch itself was created or removed.</p></div></li>
+          
+          <li><div class="grow"><span class="k">branch · updated · when it was protected = true</span><p>Protected branches cannot be force-reset through the API.</p></div></li>
+          
+          <li><div class="grow"><span class="k">merge_request · deleted</span><p>A deleted merge request cannot be restored.</p></div></li>
+          
+          <li><div class="grow"><span class="k">issue · deleted</span><p>A deleted issue cannot be restored.</p></div></li>
+          
+          <li><div class="grow"><span class="k">ci_variable · updated · value_fp changed</span><p>Rewind stores only a keyed fingerprint of variable values, never the value, so it cannot put an old value back.</p></div></li>
+          
+          <li><div class="grow"><span class="k">ci_variable · deleted</span><p>The deleted value was never stored, so it cannot be recreated.</p></div></li>
+          
+          <li><div class="grow"><span class="k">any other change</span><p>No known inverse for this kind of change; Rewind fails closed.</p></div></li>
+          
+        </ul>
+      </div>
+      
+    </div>
+  </section>
+
+  <section aria-labelledby="gate-h">
+    <header><h2 id="gate-h">The gate, before merge</h2><span class="muted small">runs on the exact commit that would ship · also a <a href="https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43319182/showcase/-/blob/main/templates/gate.yml">CI/CD component</a></span></header>
+    <div class="rules">
+      
+      <div class="card rule">
+        <span class="badge tone-critical "><span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="M6 18L18 6"/></svg></span>Block</span> <b class="mono small">migration-without-downgrade</b>
+        <div class="k" style="margin-top:6px">app/migrations/*.py</div>
+        <p>A schema migration without downgrade() cannot be rolled back.</p>
+        
+      </div>
+      
+      <div class="card rule">
+        <span class="badge tone-critical "><span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="M6 18L18 6"/></svg></span>Block</span> <b class="mono small">external-side-effect</b>
+        <div class="k" style="margin-top:6px">app/**/*.py · not app/tests/**</div>
+        <p>New code reaches an external system. Messages and calls that leave the system cannot be recalled.</p>
+        <p class="muted">How to ship it safely: Write the message to a queue or outbox instead of sending it, so the code stays undoable; sending becomes a separate step a human approves once.</p>
+      </div>
+      
+      <div class="card rule">
+        <span class="badge tone-warning "><span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 19v-5a6 6 0 0 1 6-6h10"/><path d="M16 4l4 4-4 4"/></svg></span>Reroute</span> <b class="mono small">default-path-frozen</b>
+        <div class="k" style="margin-top:6px">app/pricing.py</div>
+        <p>User-visible pricing changes must ship behind a feature flag, so release stays reversible by a flag toggle.</p>
+        <p class="muted">What the agent is told to do instead: Do not change legacy_total(). Implement the new behaviour only in new_pricing_total(), which runs only when feature flag new_pricing is enabled. Turn it on for production by setting new_pricing: {production: true} in config/flags.yaml; the pipeline applies it after deploy.</p>
+      </div>
+      
+      <div class="card rule">
+        <span class="badge tone-critical "><span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="M6 18L18 6"/></svg></span>Block</span> <b class="mono small">protected-path</b>
+        <p>Agents may not change their own guardrails or the delivery pipeline:</p>
+        <div class="chips" style="margin-top:8px"><code>rewind/**</code><code>service/**</code><code>flows/**</code><code>agents/**</code><code>ci/**</code><code>infra/**</code><code>.gitlab-ci.yml</code><code>.gitlab/**</code><code>AGENTS.md</code><code>CLAUDE.md</code></div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="priv-h">
+    <header><h2 id="priv-h">Agent privileges, per step</h2><span class="muted small">least privilege · never granted: start_flows</span></header>
+    <div class="card table-wrap"><table class="table">
+      <thead><tr><th scope="col">Step</th><th scope="col">Privileges</th></tr></thead>
+      <tbody>
+        <tr><td><b style="text-transform:capitalize">plan</b></td><td><div class="chips"><span class="chip">read_only_files</span><span class="chip">read_only_gitlab</span><span class="chip">read_write_gitlab</span><span class="chip">run_mcp_tools</span></div></td></tr>
+      
+        <tr><td><b style="text-transform:capitalize">develop</b></td><td><div class="chips"><span class="chip">read_write_files</span><span class="chip">read_only_gitlab</span><span class="chip">read_write_gitlab</span><span class="chip">use_git</span><span class="chip">run_commands</span></div></td></tr>
+      
+        <tr><td><b style="text-transform:capitalize">review</b></td><td><div class="chips"><span class="chip">read_only_files</span><span class="chip">read_only_gitlab</span><span class="chip">read_write_gitlab</span></div></td></tr>
+      
+        <tr><td><b style="text-transform:capitalize">fix</b></td><td><div class="chips"><span class="chip">read_write_files</span><span class="chip">read_only_gitlab</span><span class="chip">read_write_gitlab</span><span class="chip">use_git</span><span class="chip">run_commands</span></div></td></tr>
+      
+        <tr><td><b style="text-transform:capitalize">secfix</b></td><td><div class="chips"><span class="chip">read_write_files</span><span class="chip">read_only_gitlab</span><span class="chip">read_write_gitlab</span><span class="chip">use_git</span><span class="chip">run_commands</span></div></td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section aria-labelledby="trust-h" class="card card-pad">
+    <header><h2 id="trust-h">Who can do what</h2></header>
+    <dl class="kv">
+      <dt>Undo a run</dt><dd>Any project member with Developer or higher: comment <code>/rewind</code>. Undo is safe and can itself be undone.</dd>
+      <dt>Stop a run</dt><dd>Same: comment <code>/rewind stop</code>. Stopping only removes autonomy.</dd>
+      <dt>Code review concerns</dt><dd>When the agent can't resolve what Duo code review asks for and everything the change ships can be undone, Rewind ships it: it overrides the requested changes for that commit, says why on the merge request, and watches production. Never for anything irreversible. Set by <code>review.unresolved_when_reversible</code>.</dd>
+      <dt>Accept the irreversible</dt><dd>Only through Rewind's authenticated API (<code>rewind approve</code>), never a comment: agents comment with your identity. Bound to one commit and to the findings shown.</dd>
+    </dl>
+  </section>
+</div>
+
+</main>
+<footer>
+  <span>Rewind lets agents do anything it can undo, and stops them only for what it can't.</span>
+  <span><a href="/api/runs">runs.json</a> · MCP at <code>/mcp/</code> · <a href="https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43319182/showcase">GitLab project</a></span>
+</footer>
+</body>
+</html>

@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rewind · gitlab-ai-hackathon/transcend-october-2026/43319182/showcase</title>
+<meta name="description" content="Rewind checkpoints GitLab before agents act, gates their changes by reversibility, and undoes the whole change set if production regresses.">
+<meta name="theme-color" content="#5040d6">
+<script>try{var t=localStorage.getItem("rewind-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;display=swap">
+<link rel="stylesheet" href="static/style.css">
+<link rel="icon" type="image/svg+xml" href="static/icon.svg">
+<script src="static/app.js" defer></script>
+
+</head>
+<body><div style="background:#5040d6;color:#fff;text-align:center;padding:8px 16px;font:500 14px/1.4 system-ui,sans-serif">Archived copy of the Rewind dashboard as it ran on Google Cloud Run during the GitLab hackathon (Oct–Nov 2026). Read-only: the live service has been retired. <a style="color:#fff;text-decoration:underline" href="https://www.youtube.com/watch?v=zsihiVEGoao">Watch the demo</a></div>
+<a class="skip" href="#main">Skip to content</a>
+<p class="sr-only" id="live-announce" aria-live="polite"></p>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="index.html" aria-label="Rewind home"><svg class="mark" width="26" height="26" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+  <circle cx="7" cy="24" r="5" fill="var(--accent)"/>
+  <path d="M27 8 14 24l13 16h7L21 24 34 8z" fill="var(--accent)"/>
+  <path d="M41 8 28 24l13 16h7L35 24 48 8z" fill="var(--accent)" opacity=".5"/>
+</svg><span>Rewind</span></a>
+    <a class="crumb" href="https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43319182/showcase" title="gitlab-ai-hackathon/transcend-october-2026/43319182/showcase on GitLab">showcase<svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14 5h5v5M19 5l-8 8"/><path d="M18 14v4a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h4"/></svg></a>
+    <nav class="nav" aria-label="Main">
+      <a href="index.html" aria-current="page">Runs</a>
+      <a href="how/index.html" >How it works</a>
+      <a href="connect/index.html" >Connect</a>
+      <a href="policy/index.html" >Policy</a>
+      <a class="hide-sm" href="/api/docs">API</a>
+      <button class="icon-btn theme" type="button" data-theme-toggle aria-label="Change theme">
+        <svg class="t-system" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"/></svg>
+        <svg class="t-light" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></svg>
+        <svg class="t-dark" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>
+      </button>
+    </nav>
+  </div>
+</header>
+<main id="main">
+
+<div class="stack" >
+  <section class="hero hero-center">
+    <h1>Agents ship to production.<br>Rewind keeps every change undoable.</h1>
+    <p class="lede"><span class="undo-keys" aria-label="Ctrl+Z"><kbd>Ctrl</kbd><span aria-hidden="true">+</span><kbd>Z</kbd></span> for autonomous software delivery on GitLab. Every agent run is checkpointed, gated by
+      reversibility before merge, and undone as one change set if production regresses, then checked against the
+      checkpoint for zero drift.</p>
+    <div class="cta">
+      <a class="btn primary" href="runs/run_20261027T001023_fee2/index.html"><svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4 4.5v4.5h4.5"/></svg>See a real rewind</a>
+      <a class="btn" href="how/index.html">How it works</a>
+    </div>
+    
+  </section>
+
+  
+  <section class="card card-pad featured" aria-labelledby="feat-h">
+    <header>
+      <div>
+        <h2 id="feat-h"><a href="runs/run_20261027T001023_fee2/index.html">#15 Weekend flash sale: $15 off every order</a></h2>
+        <p class="muted small" style="margin-top:2px">A real run on this project: production regressed, and Rewind took the whole change set back.</p>
+      </div>
+      <span class="badge tone-accent "><span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4 4.5v4.5h4.5"/></svg></span>Rewound</span>
+    </header>
+    
+<div class="track has-arc rolled" role="group" aria-label="Run progress" style="--ret: 7">
+  <svg class="arc" viewBox="0 0 100 56" preserveAspectRatio="none" aria-hidden="true">
+    <path d="M 83.33 50 C 83.33 4, 5.56 4, 5.56 41" vector-effect="non-scaling-stroke"/>
+  </svg>
+  <span class="arc-head" aria-hidden="true" style="--x: 5.56"></span>
+  <span class="arc-label" style="--x: 44.44"><svg class="ico" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4 4.5v4.5h4.5"/></svg>Back to the checkpoint in 34.9s · zero drift</span>
+  <div class="rail"><span class="ret" aria-hidden="true"></span>
+  <span class="progress" style="width: calc((100% - 100% / 9) * 7 / 8)" aria-hidden="true"></span>
+  <ol>
+    <li class="station restored">
+      <span class="node" aria-hidden="true" title="Project state captured before agents act"><svg class="ico" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
+      <span class="name">Checkpoint<span class="sr-only">: restored to this checkpoint. Project state captured before agents act.</span></span>
+      <span class="when">00:10:23<span class="note">restored here</span></span>
+    </li>
+    <li class="station undone">
+      <span class="node" aria-hidden="true" title="Agent posts its plan"><svg class="ico" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
+      <span class="name">Plan<span class="sr-only">: rolled back by Rewind. Agent posts its plan.</span></span>
+      <span class="when">00:10:26</span>
+    </li>
+    <li class="station undone">
+      <span class="node" aria-hidden="true" title="Agent opens a merge request"><svg class="ico" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
+      <span class="name">Develop<span class="sr-only">: rolled back by Rewind. Agent opens a merge request.</span></span>
+      <span class="when">00:10:30</span>
+    </li>
+    <li class="station undone">
+      <span class="node" aria-hidden="true" title="Can everything it ships be undone?"><svg class="ico" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
+      <span class="name">Gate<span class="sr-only">: rolled back by Rewind. Can everything it ships be undone?.</span></span>
+      <span class="when">00:12:15</span>
+    </li>
+    <li class="station undone">
+      <span class="node" aria-hidden="true" title="Tests and security scans on the merge request"><svg class="ico" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
+      <span class="name">Verify<span class="sr-only">: rolled back by Rewind. Tests and security scans on the merge request.</span></span>
+      <span class="when">00:12:20</span>
+    </li>
+    <li class="station undone">
+      <span class="node" aria-hidden="true" title="Duo code review"><svg class="ico" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
+      <span class="name">Review<span class="sr-only">: rolled back by Rewind. Duo code review.</span></span>
+      <span class="when">00:14:26</span>
+    </li>
+    <li class="station undone">
+      <span class="node" aria-hidden="true" title="Rewind merges the exact gated commit"><svg class="ico" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
+      <span class="name">Merge<span class="sr-only">: rolled back by Rewind. Rewind merges the exact gated commit.</span></span>
+      <span class="when">00:16:07</span>
+    </li>
+    <li class="station regressed">
+      <span class="node" aria-hidden="true" title="Staging, production, flags, monitoring"><svg class="ico" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg></span>
+      <span class="name">Release<span class="sr-only">: production regressed here. Staging, production, flags, monitoring.</span></span>
+      <span class="when">00:18:07<span class="note">production regressed</span></span>
+    </li>
+    <li class="station outcome tone-accent done">
+      <span class="node" aria-hidden="true"><svg class="ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4 4.5v4.5h4.5"/></svg></span>
+      <span class="name">Rewound</span>
+      <span class="when">00:27:03</span>
+    </li>
+  </ol>
+  </div>
+</div>
+    <ul class="facts">
+      <li><b>18s</b> production back</li>
+      <li><b>35s</b> everything restored</li>
+      <li><b>Zero drift</b> checked against the checkpoint</li>
+      <li><a href="https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43319182/showcase/-/issues/16">incident #16</a> opened and closed by Rewind</li>
+    </ul>
+  </section>
+  
+
+  <section aria-label="Key numbers">
+    <div class="tiles centered">
+      <div class="card tile">
+        <span class="label">Hands-off runs</span>
+        <span class="value">13</span>
+        <span class="context">1 shipped · 7 rewound · 1 blocked</span>
+      </div>
+      <div class="card tile">
+        <span class="label">Rewinds with zero drift</span>
+        <span class="value">4<small>/ 5</small></span>
+        <span class="context">verified against the checkpoint</span>
+      </div>
+      <div class="card tile">
+        <span class="label">Fastest mitigation</span>
+        <span class="value">13s</span>
+        <span class="context">production traffic and flags back to the checkpoint</span>
+      </div>
+      <div class="card tile">
+        <span class="label">Median full restore</span>
+        <span class="value">32s</span>
+        <span class="context">code, releases and records included</span>
+      </div>
+      <div class="card tile">
+        <span class="label">Agent flows today</span>
+        <span class="value">0<small>/ 25</small></span>
+        <span class="context">credit guard: no new flows past the daily limit</span>
+        <div class="meter" role="meter" aria-valuemin="0" aria-valuemax="25" aria-valuenow="0" aria-label="Flows started today"><span style="width: 0.0%"></span></div>
+      </div>
+    </div>
+  </section>
+
+  
+
+  <section aria-labelledby="runs-h">
+    <header><h2 id="runs-h">Runs</h2><span class="muted small">13 total · newest first</span></header>
+    
+    <div class="legend key" aria-label="How changes are classified">
+      <span><span class="badge tone-good "><span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></span>Reversible</span> Rewind restores these exactly.</span><span><span class="badge tone-warning "><span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 8h15M15 4l4 4-4 4"/><path d="M20 16H5M9 12l-4 4 4 4"/></svg></span>Compensatable</span> Neutralised by a new, recorded action; history is kept.</span><span><span class="badge tone-critical "><span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="M6 18L18 6"/></svg></span>Irreversible</span> Cannot be undone, so the gate stops them.</span>
+    </div>
+    <div class="card table-wrap">
+      <table class="table">
+        <thead><tr><th scope="col">Issue</th><th scope="col">Outcome</th><th scope="col">Gate</th>
+          <th scope="col" class="hide-sm">Change set</th><th scope="col" class="hide-sm">Duration</th><th scope="col" class="hide-sm">Updated</th></tr></thead>
+        <tbody>
+        
+          <tr>
+            <td><a class="title" href="runs/run_20261027T001023_fee2/index.html">#15 Weekend flash sale: $15 off every order</a>
+              <div class="sub mono">run_20261027T001023_fee2 · !15 · incident #16</div></td>
+            <td><span class="badge tone-accent "><span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4 4.5v4.5h4.5"/></svg></span>Rewound</span>
+              <div class="sub">mitigated 18s · zero drift</div></td>
+            <td><span class="badge tone-good "><span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>Allow</span></td>
+            <td class="hide-sm"><span class="chips">
+  <span class="chip tone-good" title="1 reversible">
+    <span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></span>1<span class="sr-only"> reversible</span></span>
+  <span class="chip tone-warning" title="1 compensatable">
+    <span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 8h15M15 4l4 4-4 4"/><path d="M20 16H5M9 12l-4 4 4 4"/></svg></span>1<span class="sr-only"> compensatable</span></span>
+  <span class="chip tone-critical zero" title="0 irreversible">
+    <span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="M6 18L18 6"/></svg></span>0<span class="sr-only"> irreversible</span></span>
+</span></td>
+            <td class="num hide-sm">16m 41s</td>
+            <td class="num hide-sm"><span data-ago="2026-10-27T00:27:03.989738+00:00">27 Oct</span></td>
+          </tr>
+        
+          <tr>
+            <td><a class="title" href="runs/run_20261025T174814_f4c3/index.html">#14 Send the order receipt before responding</a>
+              <div class="sub mono">run_20261025T174814_f4c3 · !14</div></td>
+            <td><span class="badge tone-critical "><span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="M6 18L18 6"/></svg></span>Blocked</span>
+              </td>
+            <td><span class="badge tone-critical "><span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="M6 18L18 6"/></svg></span>Block</span></td>
+            <td class="hide-sm"><span class="chips">
+  <span class="chip tone-good" title="1 reversible">
+    <span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></span>1<span class="sr-only"> reversible</span></span>
+  <span class="chip tone-warning" title="1 compensatable">
+    <span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 8h15M15 4l4 4-4 4"/><path d="M20 16H5M9 12l-4 4 4 4"/></svg></span>1<span class="sr-only"> compensatable</span></span>
+  <span class="chip tone-critical zero" title="0 irreversible">
+    <span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="M6 18L18 6"/></svg></span>0<span class="sr-only"> irreversible</span></span>
+</span></td>
+            <td class="num hide-sm">4m 00s</td>
+            <td class="num hide-sm"><span data-ago="2026-10-25T17:52:14.766417+00:00">25 Oct</span></td>
+          </tr>
+        
+          <tr>
+            <td><a class="title" href="runs/run_20261025T173914_0790/index.html">#14 Send the order receipt before responding</a>
+              <div class="sub mono">run_20261025T173914_0790</div></td>
+            <td><span class="badge tone-critical "><span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg></span>Failed</span>
+              </td>
+            <td><span class="muted">—</span></td>
+            <td class="hide-sm"><span class="muted">—</span></td>
+            <td class="num hide-sm">2m 24s</td>
+            <td class="num hide-sm"><span data-ago="2026-10-25T17:41:38.748496+00:00">25 Oct</span></td>
+          </tr>
+        
+          <tr>
+            <td><a class="title" href="runs/run_20261025T170941_3fb8/index.html">#6 Email a receipt when an order is placed</a>
+              <div class="sub mono">run_20261025T170941_3fb8 · !13</div></td>
+            <td><span class="badge tone-good "><span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>Shipped</span>
+              </td>
+            <td><span class="badge tone-good "><span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>Allow</span></td>
+            <td class="hide-sm"><span class="chips">
+  <span class="chip tone-good" title="4 reversible">
+    <span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></span>4<span class="sr-only"> reversible</span></span>
+  <span class="chip tone-warning" title="4 compensatable">
+    <span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 8h15M15 4l4 4-4 4"/><path d="M20 16H5M9 12l-4 4 4 4"/></svg></span>4<span class="sr-only"> compensatable</span></span>
+  <span class="chip tone-critical zero" title="0 irreversible">
+    <span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="M6 18L18 6"/></svg></span>0<span class="sr-only"> irreversible</span></span>
+</span></td>
+            <td class="num hide-sm">15m 55s</td>
+            <td class="num hide-sm"><span data-ago="2026-10-25T17:25:36.568397+00:00">25 Oct</span></td>
+          </tr>
+        
+          <tr>
+            <td><a class="title" href="runs/run_20261025T163636_b3af/index.html">#12 Weekend flash sale: $15 off every order</a>
+              <div class="sub mono">run_20261025T163636_b3af · !11 · incident #13</div></td>
+            <td><span class="badge tone-accent "><span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4 4.5v4.5h4.5"/></svg></span>Rewound</span>
+              <div class="sub">mitigated 17s · zero drift</div></td>
+            <td><span class="badge tone-good "><span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>Allow</span></td>
+            <td class="hide-sm"><span class="chips">
+  <span class="chip tone-good" title="1 reversible">
+    <span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></span>1<span class="sr-only"> reversible</span></span>
+  <span class="chip tone-warning" title="1 compensatable">
+    <span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 8h15M15 4l4 4-4 4"/><path d="M20 16H5M9 12l-4 4 4 4"/></svg></span>1<span class="sr-only"> compensatable</span></span>
+  <span class="chip tone-critical zero" title="0 irreversible">
+    <span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="M6 18L18 6"/></svg></span>0<span class="sr-only"> irreversible</span></span>
+</span></td>
+            <td class="num hide-sm">15m 48s</td>
+            <td class="num hide-sm"><span data-ago="2026-10-25T16:52:24.798100+00:00">25 Oct</span></td>
+          </tr>
+        
+          <tr>
+            <td><a class="title" href="runs/run_20261024T224855_4311/index.html">#10 Weekend flash sale: $15 off every order</a>
+              <div class="sub mono">run_20261024T224855_4311 · !9 · incident #11</div></td>
+            <td><span class="badge tone-accent "><span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4 4.5v4.5h4.5"/></svg></span>Rewound</span>
+              <div class="sub">mitigated 13s · zero drift</div></td>
+            <td><span class="badge tone-good "><span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>Allow</span></td>
+            <td class="hide-sm"><span class="chips">
+  <span class="chip tone-good" title="1 reversible">
+    <span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></span>1<span class="sr-only"> reversible</span></span>
+  <span class="chip tone-warning" title="1 compensatable">
+    <span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 8h15M15 4l4 4-4 4"/><path d="M20 16H5M9 12l-4 4 4 4"/></svg></span>1<span class="sr-only"> compensatable</span></span>
+  <span class="chip tone-critical zero" title="0 irreversible">
+    <span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="M6 18L18 6"/></svg></span>0<span class="sr-only"> irreversible</span></span>
+</span></td>
+            <td class="num hide-sm">15h 14m</td>
+            <td class="num hide-sm"><span data-ago="2026-10-25T14:03:00.089131+00:00">25 Oct</span></td>
+          </tr>
+        
+          <tr>
+            <td><a class="title" href="runs/run_20261024T222329_0b2a/index.html">#8 Weekend flash sale: $15 off every order</a>
+              <div class="sub mono">run_20261024T222329_0b2a · !7 · incident #9</div></td>
+            <td><span class="badge tone-accent "><span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4 4.5v4.5h4.5"/></svg></span>Rewound</span>
+              <div class="sub">drift found</div></td>
+            <td><span class="badge tone-good "><span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>Allow</span></td>
+            <td class="hide-sm"><span class="chips">
+  <span class="chip tone-good" title="1 reversible">
+    <span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></span>1<span class="sr-only"> reversible</span></span>
+  <span class="chip tone-warning" title="1 compensatable">
+    <span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 8h15M15 4l4 4-4 4"/><path d="M20 16H5M9 12l-4 4 4 4"/></svg></span>1<span class="sr-only"> compensatable</span></span>
+  <span class="chip tone-critical zero" title="0 irreversible">
+    <span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="M6 18L18 6"/></svg></span>0<span class="sr-only"> irreversible</span></span>
+</span></td>
+            <td class="num hide-sm">24m 38s</td>
+            <td class="num hide-sm"><span data-ago="2026-10-24T22:48:07.564645+00:00">24 Oct</span></td>
+          </tr>
+        
+          <tr>
+            <td><a class="title" href="runs/run_20261024T211525_7874/index.html">#5 Launch promo: $15 off every order</a>
+              <div class="sub mono">run_20261024T211525_7874 · !6 · incident #7</div></td>
+            <td><span class="badge tone-accent "><span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4 4.5v4.5h4.5"/></svg></span>Rewound</span>
+              <div class="sub">zero drift</div></td>
+            <td><span class="badge tone-good "><span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>Allow</span></td>
+            <td class="hide-sm"><span class="chips">
+  <span class="chip tone-good" title="1 reversible">
+    <span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></span>1<span class="sr-only"> reversible</span></span>
+  <span class="chip tone-warning" title="1 compensatable">
+    <span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 8h15M15 4l4 4-4 4"/><path d="M20 16H5M9 12l-4 4 4 4"/></svg></span>1<span class="sr-only"> compensatable</span></span>
+  <span class="chip tone-critical zero" title="0 irreversible">
+    <span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="M6 18L18 6"/></svg></span>0<span class="sr-only"> irreversible</span></span>
+</span></td>
+            <td class="num hide-sm">37m 15s</td>
+            <td class="num hide-sm"><span data-ago="2026-10-24T21:52:40.452459+00:00">24 Oct</span></td>
+          </tr>
+        
+          <tr>
+            <td><a class="title" href="runs/run_20261023T164126_1f36/index.html">#6 Email a receipt when an order is placed</a>
+              <div class="sub mono">run_20261023T164126_1f36</div></td>
+            <td><span class="badge tone-critical "><span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg></span>Failed</span>
+              </td>
+            <td><span class="muted">—</span></td>
+            <td class="hide-sm"><span class="muted">—</span></td>
+            <td class="num hide-sm">3m 39s</td>
+            <td class="num hide-sm"><span data-ago="2026-10-23T16:45:06.058939+00:00">23 Oct</span></td>
+          </tr>
+        
+          <tr>
+            <td><a class="title" href="runs/run_20261023T164011_7cc1/index.html">#5 Launch promo: $15 off every order</a>
+              <div class="sub mono">run_20261023T164011_7cc1</div></td>
+            <td><span class="badge tone-critical "><span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg></span>Failed</span>
+              </td>
+            <td><span class="muted">—</span></td>
+            <td class="hide-sm"><span class="muted">—</span></td>
+            <td class="num hide-sm">4m 57s</td>
+            <td class="num hide-sm"><span data-ago="2026-10-23T16:45:08.568495+00:00">23 Oct</span></td>
+          </tr>
+        
+          <tr>
+            <td><a class="title" href="runs/run_20261021T153020_1b0c/index.html">#2 Launch promo: $15 off every order</a>
+              <div class="sub mono">run_20261021T153020_1b0c · !4</div></td>
+            <td><span class="badge tone-accent "><span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4 4.5v4.5h4.5"/></svg></span>Rewound</span>
+              </td>
+            <td><span class="badge tone-good "><span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>Allow</span></td>
+            <td class="hide-sm"><span class="chips">
+  <span class="chip tone-good" title="1 reversible">
+    <span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></span>1<span class="sr-only"> reversible</span></span>
+  <span class="chip tone-warning" title="1 compensatable">
+    <span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 8h15M15 4l4 4-4 4"/><path d="M20 16H5M9 12l-4 4 4 4"/></svg></span>1<span class="sr-only"> compensatable</span></span>
+  <span class="chip tone-critical zero" title="0 irreversible">
+    <span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="M6 18L18 6"/></svg></span>0<span class="sr-only"> irreversible</span></span>
+</span></td>
+            <td class="num hide-sm">13m 33s</td>
+            <td class="num hide-sm"><span data-ago="2026-10-21T15:43:54.113113+00:00">21 Oct</span></td>
+          </tr>
+        
+          <tr>
+            <td><a class="title" href="runs/run_20261021T145751_b504/index.html">#2 Launch promo: $15 off every order</a>
+              <div class="sub mono">run_20261021T145751_b504 · !2</div></td>
+            <td><span class="badge tone-accent "><span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4 4.5v4.5h4.5"/></svg></span>Rewound</span>
+              </td>
+            <td><span class="badge tone-good "><span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>Allow</span></td>
+            <td class="hide-sm"><span class="chips">
+  <span class="chip tone-good" title="1 reversible">
+    <span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></span>1<span class="sr-only"> reversible</span></span>
+  <span class="chip tone-warning" title="3 compensatable">
+    <span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 8h15M15 4l4 4-4 4"/><path d="M20 16H5M9 12l-4 4 4 4"/></svg></span>3<span class="sr-only"> compensatable</span></span>
+  <span class="chip tone-critical zero" title="0 irreversible">
+    <span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="M6 18L18 6"/></svg></span>0<span class="sr-only"> irreversible</span></span>
+</span></td>
+            <td class="num hide-sm">8m 00s</td>
+            <td class="num hide-sm"><span data-ago="2026-10-21T15:05:51.343768+00:00">21 Oct</span></td>
+          </tr>
+        
+          <tr>
+            <td><a class="title" href="runs/run_20261021T144230_ba1d/index.html">#2 Launch promo: $15 off every order</a>
+              <div class="sub mono">run_20261021T144230_ba1d</div></td>
+            <td><span class="badge tone-critical "><span class="i"><svg class="ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg></span>Failed</span>
+              </td>
+            <td><span class="muted">—</span></td>
+            <td class="hide-sm"><span class="muted">—</span></td>
+            <td class="num hide-sm">1m 18s</td>
+            <td class="num hide-sm"><span data-ago="2026-10-21T14:43:48.782232+00:00">21 Oct</span></td>
+          </tr>
+        
+        </tbody>
+      </table>
+    </div>
+    
+  </section>
+
+</div>
+
+</main>
+<footer>
+  <span>Rewind lets agents do anything it can undo, and stops them only for what it can't.</span>
+  <span><a href="/api/runs">runs.json</a> · MCP at <code>/mcp/</code> · <a href="https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43319182/showcase">GitLab project</a></span>
+</footer>
+</body>
+</html>
